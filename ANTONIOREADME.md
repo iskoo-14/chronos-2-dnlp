@@ -1,10 +1,6 @@
 DNLP Project – Scripts Overview
 ===============================
 
-This document explains in simple terms the Python scripts added to the project,
-what they do, and why they are needed for the Chronos-2 forecasting pipeline.
-
-
 ------------------------------------------------------------
 1. prepare_rossmann.py
 Location: docs/data_preparation/prepare_rossmann.py
