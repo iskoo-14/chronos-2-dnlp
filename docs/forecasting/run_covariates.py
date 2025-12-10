@@ -6,27 +6,22 @@ import os
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
-def load_dataset(path: str):
-    """Load the processed Rossmann dataset."""
+def load_dataset(path: str): # Rossmann dataset
     return pd.read_csv(path)
 
 
-def extract_target(df, target_col="Sales"):
-    """Return the target time series as list."""
-    return df[target_col].values.tolist()
+def extract_target(df, target_col="Sales"): 
+    return df[target_col].values.tolist() # sales as a list
 
 
+# NUMERIC COLUMNS
+# PAST AND FUTURE COVARIATES
 def extract_covariates(df, exclude_cols=("Date", "Sales")):
-    """
-    Extract covariates (past + future).
-    All numeric columns except target become covariates.
-    """
     cov_df = df.drop(columns=list(exclude_cols), errors="ignore")
     return cov_df.values.tolist()
 
-
+# Chronos
 def run_covariate_forecasting(series, past_covariates, future_covariates, horizon=30):
-    """Run Chronos-2 forecasting with covariates."""
 
     pipe = ChronosPipeline.from_pretrained(
         "amazon/chronos-t5-large",
@@ -44,7 +39,6 @@ def run_covariate_forecasting(series, past_covariates, future_covariates, horizo
 
 
 def compute_metrics(true_values, predicted_values):
-    """Compute classical forecasting metrics."""
     mae = mean_absolute_error(true_values, predicted_values)
     mse = mean_squared_error(true_values, predicted_values)
     rmse = np.sqrt(mse)
@@ -57,9 +51,7 @@ def compute_metrics(true_values, predicted_values):
 
 
 def save_results(predictions, metrics, output_folder):
-    """Save predictions and metrics."""
     os.makedirs(output_folder, exist_ok=True)
-
     pd.DataFrame({"forecast": predictions}).to_csv(
         os.path.join(output_folder, "covariate_forecast.csv"), index=False
     )
@@ -68,7 +60,7 @@ def save_results(predictions, metrics, output_folder):
         os.path.join(output_folder, "covariate_metrics.csv"), index=False
     )
 
-    print(f"✓ Saved forecast and metrics to {output_folder}")
+    print(f"Saved forecast and metrics to {output_folder}")
 
 
 if __name__ == "__main__":

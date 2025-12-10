@@ -1,94 +1,99 @@
-DNLP Project – Scripts Overview
-===============================
+DNLP Project – Overview of the Scripts I Added
+==============================================
+
+Here is a quick explanation of the Python scripts I created so everyone in the group 
+knows what they do and how they fit into the project.
+
 
 ------------------------------------------------------------
 1. prepare_rossmann.py
 Location: docs/data_preparation/prepare_rossmann.py
-Purpose: Prepare the Rossmann dataset for all experiments.
+
+This script prepares the Rossmann dataset for all the experiments.
 
 What it does:
-- Loads train.csv and store.csv
-- Merges them into a single dataset
-- Removes days when the store was closed
-- Handles missing values
-- Generates useful time-based features (day, month, week, etc.)
-- Adds a "RandomNoise" column (used for robustness experiments)
-- Saves the final processed dataset as: processed_rossmann.csv
+- loads train.csv and store.csv
+- merges the two datasets
+- removes days when the store was closed
+- fills missing values
+- adds time-based features (year, month, day, etc.)
+- adds a noise column (used later for robustness tests)
+- saves the final dataset as processed_rossmann.csv
 
-Why it is needed:
-This script produces the clean dataset that all other scripts will use
-during forecasting. Without it, Chronos-2 cannot correctly use covariates.
-
-How to run:
-python prepare_rossmann.py
+Why it’s important:
+All other scripts use this cleaned dataset with covariates.
 
 
 ------------------------------------------------------------
 2. run_univariate.py
 Location: docs/forecasting/run_univariate.py
-Purpose: Run Chronos-2 in zero-shot univariate forecasting mode.
+
+This script runs the baseline model.
 
 What it does:
-- Loads processed_rossmann.csv
-- Extracts the target series "Sales"
-- Calls Chronos-2 WITHOUT any covariates
-- Produces future predictions (default horizon = 30)
-- Saves results as: univariate_results.csv
+- loads processed_rossmann.csv
+- extracts only the target series “Sales”
+- runs Chronos-2 without any covariates
+- saves the predictions as univariate_results.csv
 
-Why it is needed:
-This script provides the baseline performance of Chronos-2.
-We use this as comparison for:
-- covariate forecasting
-- noise tests
-- shuffle tests
-- masking tests
-
-How to run:
-python run_univariate.py
+Why it’s useful:
+This gives us a baseline to compare against the covariate model and the robustness tests.
 
 
 ------------------------------------------------------------
 3. run_covariates.py
 Location: docs/forecasting/run_covariates.py
-Purpose: Run Chronos-2 using target + covariates.
+
+This script runs the forecasting model using covariates.
 
 What it does:
-- Loads processed_rossmann.csv
-- Uses "Sales" as target
-- Uses all other numeric columns as covariates
-- Runs Chronos-2 with past and future covariates
-- Computes metrics (MAE, MSE, RMSE)
-- Saves predictions and metrics in: covariate_results/
+- loads processed_rossmann.csv
+- uses “Sales” as the target
+- uses all other numeric columns as covariates
+- runs Chronos-2 with both past and future covariates
+- computes MAE, MSE, RMSE
+- saves results inside the covariate_results/ folder
 
-Why it is needed:
-This script shows whether Chronos-2 actually uses external information
-such as:
-- Promo
-- SchoolHoliday
-- Store features
-and whether these variables improve forecasting accuracy.
-
-How to run:
-python run_covariates.py
+Why it’s useful:
+It lets us check whether Chronos-2 improves when we give it extra information
+like Promo, SchoolHoliday, store features, etc.
 
 
 ------------------------------------------------------------
-Next Step: Robustness Experiments
-A separate script (run_robustness_tests.py) will later perform:
-- Noise test (random covariate)
-- Shuffle test (breaking correlations)
-- Missing future covariate test
+4. run_robustness_tests.py
+Location: docs/experiments/run_robustness_tests.py
 
-These experiments rely on the outputs produced by the scripts above.
+This script runs the robustness tests that we will use as our project extension.
+
+The three tests:
+
+A) Noise Test  
+   Adds a random noise column to see if Chronos ignores irrelevant information.
+
+B) Shuffle Test  
+   Shuffles values of “Promo” to break correlations.  
+   If performance drops, Chronos was actually using Promo.
+
+C) Missing Future Test  
+   Removes future values of “SchoolHoliday” to test how much Chronos depends on
+   future-known covariates.
+
+Each test saves:
+- forecast.csv
+- metrics.csv
+
+The results are saved in:
+docs/experiments/noise_test/
+docs/experiments/shuffle_test/
+docs/experiments/missing_future_test/
 
 
 ------------------------------------------------------------
-Summary
-prepare_rossmann.py → prepares dataset
-run_univariate.py   → baseline forecasting
-run_covariates.py   → forecasting with covariates
-robustness tests    → evaluate Chronos-2 intelligence
+Quick Summary
+-------------
+prepare_rossmann.py → prepares the dataset  
+run_univariate.py   → baseline forecasting  
+run_covariates.py   → forecasting with covariates  
+run_robustness_tests.py → robustness experiments
 
-All scripts work without training (Chronos-2 is zero-shot).
-The cleaned dataset is required for the entire pipeline.
-
+Everything depends on the processed dataset.

@@ -5,19 +5,17 @@ import os
 
 
 def load_processed_dataset(path: str):
-    """Load dataset preprocessed by prepare_rossmann.py"""
-    df = pd.read_csv(path)
-    return df
+    # Load dataset produced by prepare_rossmann.py
+    return pd.read_csv(path)
 
 
 def extract_target(df, target_col="Sales"):
-    """Extract the univariate series"""
+    # Extract target time series
     return df[target_col].values.tolist()
 
 
 def run_univariate_forecast(series, horizon=30):
-    """Run Chronos-2 Zero-Shot Univariate prediction"""
-    
+    # Zero-shot univariate forecasting with Chronos-2
     pipe = ChronosPipeline.from_pretrained(
         "amazon/chronos-t5-large",
         device="cuda" if torch.cuda.is_available() else "cpu",
@@ -34,6 +32,7 @@ def run_univariate_forecast(series, horizon=30):
 
 
 def save_results(forecast, output_path):
+    # Save predictions to CSV
     pd.DataFrame({"predicted": forecast}).to_csv(output_path, index=False)
     print(f"Saved univariate forecast to {output_path}")
 
