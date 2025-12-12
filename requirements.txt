@@ -1,16 +1,25 @@
+# Core ML
 torch
 transformers
 accelerate
 chronos-forecasting
 
+# Data
 pandas
 numpy
 scikit-learn
+
+# Visualization
 matplotlib
 seaborn
 
+# Utils
 python-dateutil
 tqdm
 requests
-huggingface_hub[hf_xet]
+
+# HuggingFace (NO extras)
+huggingface-hub[hf_text]
+
+# Testing
 pytest
