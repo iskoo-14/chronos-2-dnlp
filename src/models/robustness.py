@@ -2,10 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from src.models.predict_model import predict_covariates
-
 # ------------------------------------------------------------
-# OUTPUTS
+# OUTPUT UTILS
 # ------------------------------------------------------------
 
 def _ensure_outputs_dir():
@@ -19,13 +17,17 @@ def _save_pred_csv(pred: dict, filename: str):
     out_dir = _ensure_outputs_dir()
     path = os.path.join(out_dir, filename)
     pd.DataFrame(
-        {"p10": pred["p10"], "median": pred["median"], "p90": pred["p90"]}
+        {
+            "p10": pred["p10"],
+            "median": pred["median"],
+            "p90": pred["p90"],
+        }
     ).to_csv(path, index=False)
     return path
 
 
 # ------------------------------------------------------------
-# CHRONOS INPUT BUILDERS (CORRECT FORMAT)
+# CHRONOS TASK BUILDERS (CORRECT API)
 # ------------------------------------------------------------
 
 def _to_1d_float(x):
@@ -35,13 +37,13 @@ def _to_1d_float(x):
     return arr.astype(np.float32)
 
 
-def _build_task_from_df(df, target, horizon=30, known_future_cols=None, extra_past_cols=None):
-    """
-    Build a Chronos-2 dict task:
-      - target: 1D length T
-      - past_covariates: dict of 1D arrays length T
-      - future_covariates: dict of 1D arrays length horizon, subset of past_covariates keys
-    """
+def _build_task_from_df(
+    df,
+    target,
+    horizon=30,
+    known_future_cols=None,
+    extra_past_cols=None,
+):
     if known_future_cols is None:
         known_future_cols = []
     if extra_past_cols is None:
@@ -50,37 +52,37 @@ def _build_task_from_df(df, target, horizon=30, known_future_cols=None, extra_pa
     T = len(target)
     target_1d = _to_1d_float(target)
 
-    # Basic covariate set: take numeric columns except obvious non-features
     drop_cols = {"Sales", "Date"}
-    numeric_cols = [c for c in df.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(df[c])]
+    numeric_cols = [
+        c
+        for c in df.columns
+        if c not in drop_cols and pd.api.types.is_numeric_dtype(df[c])
+    ]
 
-    # Ensure required columns exist if asked
     for c in known_future_cols + extra_past_cols:
         if c not in df.columns:
-            raise ValueError(f"Required column '{c}' not found in df.")
+            raise ValueError(f"Required column '{c}' not found in df")
 
-    cov_cols = sorted(set(numeric_cols + extra_past_cols + known_future_cols))
+    cov_cols = sorted(set(numeric_cols + known_future_cols + extra_past_cols))
 
-    # past covariates: full length T
     past_cov = {}
     for c in cov_cols:
-        v = df[c].to_numpy()
+        v = df[c].to_numpy(dtype=np.float32)
+        v = np.nan_to_num(v, nan=0.0)
         if len(v) != T:
-            raise ValueError(f"Covariate '{c}' length {len(v)} != target length {T}")
-        v = np.nan_to_num(v, nan=0.0).astype(np.float32)
+            raise ValueError(f"Covariate '{c}' length mismatch")
         past_cov[c] = v
 
-    # future covariates: only last horizon values, only for known_future_cols
     fut_cov = {}
     for c in known_future_cols:
         fut = past_cov[c][-horizon:]
         if len(fut) != horizon:
-            raise ValueError(f"Future cov '{c}' must have length horizon={horizon}, got {len(fut)}")
+            raise ValueError(f"Future cov '{c}' must have length {horizon}")
         fut_cov[c] = fut
 
     task = {
         "target": target_1d,
-        "past_covariates": past_cov
+        "past_covariates": past_cov,
     }
     if len(fut_cov) > 0:
         task["future_covariates"] = fut_cov
@@ -88,7 +90,14 @@ def _build_task_from_df(df, target, horizon=30, known_future_cols=None, extra_pa
     return task
 
 
-def _run_chronos(model, df, target, horizon=30, known_future_cols=None, extra_past_cols=None):
+def _run_chronos(
+    model,
+    df,
+    target,
+    horizon=30,
+    known_future_cols=None,
+    extra_past_cols=None,
+):
     task = _build_task_from_df(
         df=df,
         target=target,
@@ -97,42 +106,32 @@ def _run_chronos(model, df, target, horizon=30, known_future_cols=None, extra_pa
         extra_past_cols=extra_past_cols,
     )
 
-    # Chronos2 returns list[Tensor] with shape (n_variates, n_quantiles, horizon)
-    # Here we forecast only 1 target => take first series/variate
-    out = model.predict([task], prediction_length=horizon)[0]  # torch.Tensor
-
-    # quantiles are typically 0.1..0.9; we take p10, median (0.5), p90
-    # out shape: (n_variates=1, n_quantiles, horizon)
+    out = model.predict([task], prediction_length=horizon)[0]
     out_np = out.detach().cpu().numpy()
+
     qdim = out_np.shape[1]
 
-    # defensively map indices: assume quantiles ordered
-    # p10 -> first, median -> middle, p90 -> last
-    p10 = out_np[0, 0, :].tolist()
-    med = out_np[0, qdim // 2, :].tolist()
-    p90 = out_np[0, -1, :].tolist()
-
-    return {"p10": p10, "median": med, "p90": p90}
+    return {
+        "p10": out_np[0, 0, :].tolist(),
+        "median": out_np[0, qdim // 2, :].tolist(),
+        "p90": out_np[0, -1, :].tolist(),
+    }
 
 
 # ------------------------------------------------------------
-# ROBUSTNESS TESTS (WORKING WITH df, NOT WITH cov matrix)
+# ROBUSTNESS TESTS
 # ------------------------------------------------------------
 
 def noise_test(model, df, target, covariates=None, horizon=30):
-    """
-    Adds an irrelevant random noise covariate (past-only).
-    A robust model should ignore it (little change vs baseline).
-    """
     df2 = df.copy()
     df2["NoiseRandom"] = np.random.randn(len(df2)).astype(np.float32)
 
     pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
+        model,
+        df2,
+        target,
         horizon=horizon,
-        known_future_cols=[],                 # noise is past-only
+        known_future_cols=[],
         extra_past_cols=["NoiseRandom"],
     )
     _save_pred_csv(pred, "noise_output.csv")
@@ -140,37 +139,26 @@ def noise_test(model, df, target, covariates=None, horizon=30):
 
 
 def strong_noise_test(model, df, target, covariates=None, horizon=30, scale=10.0):
-    """
-    Adds strong Gaussian noise to numeric covariates (past-only).
-    """
     df2 = df.copy()
 
     drop_cols = {"Sales", "Date"}
-    numeric_cols = [c for c in df2.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(df2[c])]
+    numeric_cols = [
+        c
+        for c in df2.columns
+        if c not in drop_cols and pd.api.types.is_numeric_dtype(df2[c])
+    ]
 
     for c in numeric_cols:
         v = df2[c].to_numpy(dtype=np.float32)
         v = np.nan_to_num(v, nan=0.0)
-        v = v + scale * np.random.randn(len(v)).astype(np.float32)
-        df2[c] = v
+        df2[c] = v + scale * np.random.randn(len(v)).astype(np.float32)
 
-    pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
-        horizon=horizon,
-        known_future_cols=[],
-        extra_past_cols=[],
-    )
+    pred = _run_chronos(model, df2, target, horizon=horizon)
     _save_pred_csv(pred, "strong_noise_output.csv")
     return pred
 
 
 def shuffle_test(model, df, target, covariates=None, horizon=30):
-    """
-    Shuffles Promo to break its temporal structure.
-    Promo is treated as known-future covariate (we also pass future slice).
-    """
     if "Promo" not in df.columns:
         raise ValueError("Promo not found for shuffle test")
 
@@ -178,23 +166,19 @@ def shuffle_test(model, df, target, covariates=None, horizon=30):
     df2["Promo"] = df2["Promo"].sample(frac=1, random_state=42).to_numpy()
 
     pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
+        model,
+        df2,
+        target,
         horizon=horizon,
         known_future_cols=["Promo"],
-        extra_past_cols=[],
     )
     _save_pred_csv(pred, "shuffle_output.csv")
     return pred
 
 
 def missing_future_test(model, df, target, covariates=None, horizon=30):
-    """
-    Masks last horizon values of SchoolHoliday (known-future), to simulate missing future info.
-    """
     if "SchoolHoliday" not in df.columns:
-        raise ValueError("SchoolHoliday not found for missing-future test")
+        raise ValueError("SchoolHoliday not found")
 
     df2 = df.copy()
     sh = df2["SchoolHoliday"].to_numpy(dtype=np.float32)
@@ -203,23 +187,19 @@ def missing_future_test(model, df, target, covariates=None, horizon=30):
     df2["SchoolHoliday"] = sh
 
     pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
+        model,
+        df2,
+        target,
         horizon=horizon,
         known_future_cols=["SchoolHoliday"],
-        extra_past_cols=[],
     )
     _save_pred_csv(pred, "missing_future_output.csv")
     return pred
 
 
 def time_shift_test(model, df, target, covariates=None, horizon=30, shift=7):
-    """
-    Shifts Promo (known-future) by 'shift' days (circular).
-    """
     if "Promo" not in df.columns:
-        raise ValueError("Promo not found for time-shift test")
+        raise ValueError("Promo not found")
 
     df2 = df.copy()
     promo = df2["Promo"].to_numpy(dtype=np.float32)
@@ -227,125 +207,82 @@ def time_shift_test(model, df, target, covariates=None, horizon=30, shift=7):
     df2["Promo"] = np.roll(promo, shift)
 
     pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
+        model,
+        df2,
+        target,
         horizon=horizon,
         known_future_cols=["Promo"],
-        extra_past_cols=[],
     )
     _save_pred_csv(pred, "time_shift_output.csv")
     return pred
 
 
 def trend_break_test(model, df, target, covariates=None, horizon=30, magnitude=0.5):
-    """
-    Applies a multiplicative trend break to a known-future covariate.
-    Here we use Promo if available, otherwise SchoolHoliday.
-    """
     df2 = df.copy()
 
-    col = None
     if "Promo" in df2.columns:
         col = "Promo"
     elif "SchoolHoliday" in df2.columns:
         col = "SchoolHoliday"
     else:
-        raise ValueError("Need Promo or SchoolHoliday for trend-break test")
+        raise ValueError("Need Promo or SchoolHoliday")
 
     v = df2[col].to_numpy(dtype=np.float32)
     v = np.nan_to_num(v, nan=0.0)
     split = int(0.8 * len(v))
-    v[split:] = v[split:] * (1.0 + float(magnitude))
+    v[split:] *= (1.0 + magnitude)
     df2[col] = v
 
     pred = _run_chronos(
-        model=model,
-        df=df2,
-        target=target,
+        model,
+        df2,
+        target,
         horizon=horizon,
         known_future_cols=[col],
-        extra_past_cols=[],
     )
     _save_pred_csv(pred, "trend_break_output.csv")
     return pred
 
-def feature_drop_test(model, df, target, covariates, horizon=30):
-    """
-    Drops one covariate entirely to test reliance on specific features.
-    """
 
-    cov = covariates.copy()
+def feature_drop_test(model, df, target, covariates=None, horizon=30):
+    df2 = df.copy()
+    drop_cols = ["Promo", "SchoolHoliday"]
+    drop_cols = [c for c in drop_cols if c in df2.columns]
+    df2 = df2.drop(columns=drop_cols)
 
-    # Drop the first covariate (generic, model-agnostic)
-    cov = cov[:, 1:]
+    pred = _run_chronos(model, df2, target, horizon=horizon)
+    _save_pred_csv(pred, "feature_drop_output.csv")
+    return pred
 
-    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
 
-    out = {
-        "p10": pred["p10"],
-        "median": pred["median"],
-        "p90": pred["p90"],
-    }
+def partial_mask_test(model, df, target, covariates=None, horizon=30, mask_ratio=0.3):
+    df2 = df.copy()
+    split = int(len(df2) * (1 - mask_ratio))
 
-    pd.DataFrame(out).to_csv("outputs/feature_drop_output.csv", index=False)
-    return out
+    for c in df2.columns:
+        if pd.api.types.is_numeric_dtype(df2[c]):
+            v = df2[c].to_numpy(dtype=np.float32)
+            v[split:] = 0.0
+            df2[c] = v
 
-def partial_mask_test(model, df, target, covariates, horizon=30, mask_ratio=0.3):
-    """
-    Masks the last portion of covariates to simulate partial future information loss.
-    """
+    pred = _run_chronos(model, df2, target, horizon=horizon)
+    _save_pred_csv(pred, "partial_mask_output.csv")
+    return pred
 
-    cov = covariates.copy()
-    T = cov.shape[0]
-    split = int(T * (1 - mask_ratio))
 
-    cov[split:, :] = 0.0
+def scaling_test(model, df, target, covariates=None, horizon=30, scale=2.0):
+    df2 = df.copy()
 
-    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
+    for c in df2.columns:
+        if pd.api.types.is_numeric_dtype(df2[c]):
+            df2[c] = df2[c].to_numpy(dtype=np.float32) * scale
 
-    out = {
-        "p10": pred["p10"],
-        "median": pred["median"],
-        "p90": pred["p90"],
-    }
+    pred = _run_chronos(model, df2, target, horizon=horizon)
+    _save_pred_csv(pred, "scaling_output.csv")
+    return pred
 
-    pd.DataFrame(out).to_csv("outputs/partial_mask_output.csv", index=False)
-    return out
 
-def scaling_test(model, df, target, covariates, horizon=30, scale=2.0):
-    """
-    Scales covariates to test robustness to magnitude changes.
-    """
-
-    cov = covariates.copy()
-    cov = cov * scale
-
-    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
-
-    out = {
-        "p10": pred["p10"],
-        "median": pred["median"],
-        "p90": pred["p90"],
-    }
-
-    pd.DataFrame(out).to_csv("outputs/scaling_output.csv", index=False)
-    return out
-
-def long_horizon_test(model, df, target, covariates, horizon=90):
-    """
-    Tests model stability on longer prediction horizons.
-    """
-
-    cov = covariates.copy()
-
-    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
-
-    out = {
-        "p10": pred["p10"],
-        "median": pred["median"],
-        "p90": pred["p90"],
-    }
-
-    pd.DataFrame(out).to_csv("outputs/long_horizon_output.csv", index=False)
-    return out
+def long_horizon_test(model, df, target, covariates=None, horizon=90):
+    pred = _run_chronos(model, df, target, horizon=horizon)
+    _save_pred_csv(pred, "long_horizon_output.csv")
+    return pred
