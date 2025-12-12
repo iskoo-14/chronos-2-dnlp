@@ -1,10 +1,10 @@
 #!/bin/bash
-
-echo "================================================"
-echo "DNLP PROJECT - PIPELINE + ROBUSTNESS TESTS"
-echo "================================================"
+echo "============================================================"
+echo "DNLP PROJECT - PIPELINE + TESTS"
+echo "============================================================"
 
 source .venv/bin/activate
+export PYTHONPATH=$(pwd)
 
 python main.py
-pytest tests/test_robustness.py -q
+pytest -q

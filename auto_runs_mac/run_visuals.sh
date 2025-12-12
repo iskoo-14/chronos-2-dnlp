@@ -1,9 +1,9 @@
 #!/bin/bash
-
-echo "============================================"
+echo "============================================================"
 echo "DNLP PROJECT - GENERATING PLOTS"
-echo "============================================"
+echo "============================================================"
 
 source .venv/bin/activate
+export PYTHONPATH=$(pwd)
 
 python src/visualization/generate_plots.py
