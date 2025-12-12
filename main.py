@@ -1,40 +1,83 @@
-import subprocess
 import os
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+import pandas as pd
 
-def run_if_missing(output_path, script_path):
-    """Run script only if expected output does not already exist."""
-    if os.path.exists(output_path):
-        print(f"[SKIPPED] {script_path} (output already exists: {output_path})")
-        return
-    print(f"\n=== Running {script_path} ===")
-    subprocess.run(["python", script_path], check=True)
-    print(f"=== Finished {script_path} ===\n")
+from src.data.make_dataset import (
+    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed
+)
+from src.features.build_features import extract_target, extract_covariates
+from src.models.predict_model import (
+    load_model, predict_univariate, predict_covariates
+)
+
+
+def ensure_output_folder(path="outputs"):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
+
 
 if __name__ == "__main__":
-    
-    preprocess = os.path.join(BASE, "docs/data_preparation/prepare_rossmann.py")
-    univariate = os.path.join(BASE, "docs/forecasting/run_univariate.py")
-    covariates = os.path.join(BASE, "docs/forecasting/run_covariates.py")
-    robustness = os.path.join(BASE, "docs/experiments/run_robustness_tests.py")
+    print("=== DNLP PIPELINE STARTED ===")
 
-    print("=== DNLP PROJECT PIPELINE STARTED ===")
+    base = os.path.dirname(os.path.abspath(__file__))
+    output_dir = ensure_output_folder("outputs")
 
-    # 1. Preprocessing
-    processed_file = os.path.join(BASE, "docs/data_preparation/processed_rossmann.csv")
-    run_if_missing(processed_file, preprocess)
+    # ------------------------------------------------------------
+    # PREPROCESSING
+    # ------------------------------------------------------------
+    print("Loading raw data...")
+    train_path = os.path.join(base, "src/data/train.csv")
+    store_path = os.path.join(base, "src/data/store.csv")
 
-    # 2. Univariate
-    univariate_output = os.path.join(BASE, "docs/forecasting/univariate_results.csv")
-    run_if_missing(univariate_output, univariate)
+    df = load_raw_data(train_path, store_path)
 
-    # 3. Covariates
-    cov_output = os.path.join(BASE, "docs/forecasting/covariate_results/forecast.csv")
-    run_if_missing(cov_output, covariates)
+    print("Cleaning data...")
+    df = clean_data(df)
+    df = add_time_features(df)
+    df = fix_mixed_types(df)
 
-    # 4. Robustness
-    robustness_output = os.path.join(BASE, "docs/experiments/noise_test/forecast.csv")
-    run_if_missing(robustness_output, robustness)
+    processed_path = os.path.join(base, "src/data/processed_rossmann.csv")
+    save_processed(df, processed_path)
 
-    print("=== PIPELINE COMPLETED ===")
+    # ------------------------------------------------------------
+    # FEATURE EXTRACTION
+    # ------------------------------------------------------------
+    print("Extracting features...")
+    target = extract_target(df)
+    covariates = extract_covariates(df)
+
+    # ------------------------------------------------------------
+    # LOAD MODEL
+    # ------------------------------------------------------------
+    print("Loading Chronos-2 model...")
+    model = load_model("amazon/chronos-2")
+
+    # ------------------------------------------------------------
+    # UNIVARIATE FORECAST
+    # ------------------------------------------------------------
+    print("Running univariate forecast...")
+    uni_out = predict_univariate(model, target)
+
+    pd.DataFrame({
+        "p10": uni_out["p10"],
+        "median": uni_out["median"],
+        "p90": uni_out["p90"]
+    }).to_csv(os.path.join(output_dir, "univariate.csv"), index=False)
+    print("Saved univariate.csv")
+
+    # ------------------------------------------------------------
+    # COVARIATE FORECAST
+    # ------------------------------------------------------------
+    print("Running covariate forecast...")
+    cov_out = predict_covariates(model, target, covariates, covariates)
+
+    pd.DataFrame({
+        "p10": cov_out["p10"],
+        "median": cov_out["median"],
+        "p90": cov_out["p90"]
+    }).to_csv(os.path.join(output_dir, "covariate.csv"), index=False)
+    print("Saved covariate.csv")
+
+    print("=== PIPELINE COMPLETED SUCCESSFULLY ===")

@@ -1,0 +1,9 @@
+=== DNLP FORECAST COMPARISON REPORT ===
+
+>>> Comparison: Covariates vs Univariate
+MAE: 0.0002
+RMSE: 0.0003
+PercentDifference: -0.0000
+IntervalWidth_Univariate: 5403.9066
+IntervalWidth_Covariate: 5403.9069
+
