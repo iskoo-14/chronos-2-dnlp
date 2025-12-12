@@ -60,4 +60,4 @@ echo To run tests:
 echo     .venv\Scripts\pytest -q
 echo ============================================================
 
-pause
+exit /b

@@ -1,33 +1,26 @@
 @echo off
 echo ============================================================
-echo DNLP Project - Run All Tests
+echo DNLP PROJECT - RUNNING ROBUSTNESS TESTS
 echo ============================================================
 
-IF NOT EXIST .venv (
-    echo ERROR: Virtual environment not found.
-    echo Run setup.bat or make env first.
-    pause
-    exit /b
-)
-
-echo Activating virtual environment...
+echo [INFO] Activating virtual environment...
 call .venv\Scripts\activate
 
-echo Adding project root to PYTHONPATH...
+echo [INFO] Setting PYTHONPATH=%CD%
 set PYTHONPATH=%CD%
 
 echo ------------------------------------------------------------
-echo Running environment tests...
+echo [STEP 1] Running pytest on test_robustness.py
 echo ------------------------------------------------------------
-pytest tests/test_environment.py -q
+pytest tests/test_robustness.py
 
 echo ------------------------------------------------------------
-echo Running robustness tests...
+echo [DONE] Robustness tests completed.
+echo Generated files:
+echo   - noise_output.csv
+echo   - shuffle_output.csv
+echo   - missing_future_output.csv
 echo ------------------------------------------------------------
-pytest tests/test_robustness.py -q
 
-echo ------------------------------------------------------------
-echo All tests completed. Check 'outputs/' for results.
-echo ------------------------------------------------------------
-
-pause
+echo Press any key to exit.
+exit /b

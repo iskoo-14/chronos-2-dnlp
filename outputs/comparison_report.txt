@@ -1,9 +1,29 @@
 === DNLP FORECAST COMPARISON REPORT ===
 
->>> Comparison: Covariates vs Univariate
-MAE: 0.0002
-RMSE: 0.0003
-PercentDifference: -0.0000
-IntervalWidth_Univariate: 5403.9066
-IntervalWidth_Covariate: 5403.9069
+> Covariates vs Univariate
+MAE: 2184.7193
+RMSE: 3289.5938
+PercentDifference: 9.3520
+Interval_Univariate: 2869.3906
+Interval_Covariates: 4862.3035
 
+> Noise vs Covariates
+MAE: 57.1427
+RMSE: 66.9627
+PercentDifference: -1.6459
+Interval_Covariates: 4862.3035
+Interval_Noise: 4926.6708
+
+> Shuffle vs Covariates
+MAE: 59.8284
+RMSE: 72.4203
+PercentDifference: -0.5505
+Interval_Covariates: 4862.3035
+Interval_Shuffle: 4762.7576
+
+> Missing Future vs Covariates
+MAE: 99.7554
+RMSE: 127.6684
+PercentDifference: -1.5145
+Interval_Covariates: 4862.3035
+Interval_MissingFuture: 4611.0161

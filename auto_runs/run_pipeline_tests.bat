@@ -1,22 +1,25 @@
 @echo off
 echo ============================================================
-echo DNLP PROJECT - MAIN PIPELINE EXECUTION
+echo DNLP PROJECT - PIPELINE + ROBUSTNESS TESTS
 echo ============================================================
 
 echo [INFO] Activating virtual environment...
 call .venv\Scripts\activate
-
-echo [INFO] Setting PYTHONPATH=%CD%
 set PYTHONPATH=%CD%
 
 echo ------------------------------------------------------------
-echo [STEP 1] Running main pipeline (preprocessing + forecasts)
+echo [STEP 1] Running main pipeline 
 echo ------------------------------------------------------------
 python main.py
 
 echo ------------------------------------------------------------
-echo [DONE] Main pipeline completed successfully.
-echo Output files saved in /outputs
+echo [STEP 2] Running robustness tests
+echo ------------------------------------------------------------
+pytest tests/test_robustness.py
+
+echo ------------------------------------------------------------
+echo [DONE] Pipeline + tests completed.
+echo Final outputs in /outputs
 echo ------------------------------------------------------------
 
 echo Press any key to exit.
