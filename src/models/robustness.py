@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from src.models.predict_model import predict_covariates
 
 # ------------------------------------------------------------
 # OUTPUTS
@@ -268,3 +269,83 @@ def trend_break_test(model, df, target, covariates=None, horizon=30, magnitude=0
     )
     _save_pred_csv(pred, "trend_break_output.csv")
     return pred
+
+def feature_drop_test(model, df, target, covariates, horizon=30):
+    """
+    Drops one covariate entirely to test reliance on specific features.
+    """
+
+    cov = covariates.copy()
+
+    # Drop the first covariate (generic, model-agnostic)
+    cov = cov[:, 1:]
+
+    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
+
+    out = {
+        "p10": pred["p10"],
+        "median": pred["median"],
+        "p90": pred["p90"],
+    }
+
+    pd.DataFrame(out).to_csv("outputs/feature_drop_output.csv", index=False)
+    return out
+
+def partial_mask_test(model, df, target, covariates, horizon=30, mask_ratio=0.3):
+    """
+    Masks the last portion of covariates to simulate partial future information loss.
+    """
+
+    cov = covariates.copy()
+    T = cov.shape[0]
+    split = int(T * (1 - mask_ratio))
+
+    cov[split:, :] = 0.0
+
+    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
+
+    out = {
+        "p10": pred["p10"],
+        "median": pred["median"],
+        "p90": pred["p90"],
+    }
+
+    pd.DataFrame(out).to_csv("outputs/partial_mask_output.csv", index=False)
+    return out
+
+def scaling_test(model, df, target, covariates, horizon=30, scale=2.0):
+    """
+    Scales covariates to test robustness to magnitude changes.
+    """
+
+    cov = covariates.copy()
+    cov = cov * scale
+
+    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
+
+    out = {
+        "p10": pred["p10"],
+        "median": pred["median"],
+        "p90": pred["p90"],
+    }
+
+    pd.DataFrame(out).to_csv("outputs/scaling_output.csv", index=False)
+    return out
+
+def long_horizon_test(model, df, target, covariates, horizon=90):
+    """
+    Tests model stability on longer prediction horizons.
+    """
+
+    cov = covariates.copy()
+
+    pred = predict_covariates(model, target, cov, cov, horizon=horizon)
+
+    out = {
+        "p10": pred["p10"],
+        "median": pred["median"],
+        "p90": pred["p90"],
+    }
+
+    pd.DataFrame(out).to_csv("outputs/long_horizon_output.csv", index=False)
+    return out

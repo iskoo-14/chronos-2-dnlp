@@ -1,44 +1,52 @@
 import os
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 OUT = "outputs"
 
 
 def load(name):
     path = os.path.join(OUT, name)
-    if not os.path.exists(path):
-        print(f"[WARN] Missing {name}")
-        return None
-    df = pd.read_csv(path)
-    return df if not df.empty else None
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        return df if not df.empty else None
+    print(f"[WARN] Missing {name}")
+    return None
 
 
+# -------------------------------------------------
+# Metrics
+# -------------------------------------------------
 def mae(a, b):
     return float(np.mean(np.abs(a - b)))
 
 
+def mse(a, b):
+    return float(np.mean((a - b) ** 2))
+
+
 def rmse(a, b):
-    return float(np.sqrt(np.mean((a - b) ** 2)))
+    return float(np.sqrt(mse(a, b)))
 
 
 def interval_width(df):
     return float(np.mean(df["p90"] - df["p10"]))
 
 
-def pct_diff(a, b):
+def percent_diff(a, b):
     return float(100 * np.mean((b - a) / (np.abs(a) + 1e-9)))
 
 
-def compare(base, test):
+def compare(base, test, n1, n2):
     m1 = base["median"].values
     m2 = test["median"].values
+
     return {
         "MAE": mae(m1, m2),
         "RMSE": rmse(m1, m2),
-        "PercentDiff": pct_diff(m1, m2),
-        "IntervalBase": interval_width(base),
-        "IntervalTest": interval_width(test),
+        "PercentDifference": percent_diff(m1, m2),
+        f"Interval_{n1}": interval_width(base),
+        f"Interval_{n2}": interval_width(test),
     }
 
 
@@ -49,36 +57,58 @@ def write_report(lines):
     print(f"[INFO] Saved {path}")
 
 
+# -------------------------------------------------
+# Main
+# -------------------------------------------------
 if __name__ == "__main__":
 
+    uni = load("univariate.csv")
     cov = load("covariate.csv")
 
-    tests = {
-        "Noise": "noise_output.csv",
-        "StrongNoise": "strong_noise_output.csv",
-        "Shuffle": "shuffle_output.csv",
-        "MissingFuture": "missing_future_output.csv",
-        "FeatureDrop": "feature_drop_output.csv",
-        "PartialMask": "partial_mask_output.csv",
-        "Scaling": "scaling_output.csv",
-        "LongHorizon": "long_horizon_output.csv",
-    }
+    noise = load("noise_output.csv")
+    shuffle = load("shuffle_output.csv")
+    missing = load("missing_future_output.csv")
+    strong_noise = load("strong_noise_output.csv")
+    time_shift = load("time_shift_output.csv")
+    trend_break = load("trend_break_output.csv")
+    feature_drop = load("feature_drop_output.csv")
+    partial_mask = load("partial_mask_output.csv")
+    scaling = load("scaling_output.csv")
+    long_horizon = load("long_horizon_output.csv")
 
-    report = []
-    report.append("=== DNLP ROBUSTNESS COMPARISON REPORT ===\n")
+    rep = []
+    rep.append("=== DNLP FORECAST COMPARISON REPORT ===\n")
 
-    if cov is None:
-        report.append("Baseline covariate forecast missing.")
-    else:
-        for name, file in tests.items():
-            df = load(file)
-            if df is None:
-                continue
+    # ----------------------------
+    # Baseline
+    # ----------------------------
+    if uni is not None and cov is not None:
+        rep.append("> Covariates vs Univariate")
+        stats = compare(uni, cov, "Univariate", "Covariates")
+        for k, v in stats.items():
+            rep.append(f"{k}: {v:.4f}")
+        rep.append("")
 
-            report.append(f"> {name} vs Covariates")
-            stats = compare(cov, df)
+    # ----------------------------
+    # Robustness tests
+    # ----------------------------
+    def add_section(label, base, test):
+        if base is not None and test is not None:
+            rep.append(f"> {label} vs Covariates")
+            stats = compare(base, test, "Covariates", label)
             for k, v in stats.items():
-                report.append(f"{k}: {v:.4f}")
-            report.append("")
+                rep.append(f"{k}: {v:.4f}")
+            rep.append("")
 
-    write_report(report)
+    add_section("Noise", cov, noise)
+    add_section("Shuffle", cov, shuffle)
+    add_section("MissingFuture", cov, missing)
+    add_section("StrongNoise", cov, strong_noise)
+    add_section("TimeShift", cov, time_shift)
+    add_section("TrendBreak", cov, trend_break)
+    add_section("FeatureDrop", cov, feature_drop)
+    add_section("PartialMask", cov, partial_mask)
+    add_section("Scaling", cov, scaling)
+    add_section("LongHorizon", cov, long_horizon)
+
+    write_report(rep)

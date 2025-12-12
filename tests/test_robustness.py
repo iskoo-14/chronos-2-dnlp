@@ -15,6 +15,10 @@ from src.models.robustness import (
     strong_noise_test,
     time_shift_test,
     trend_break_test,
+    feature_drop_test,
+    partial_mask_test,
+    scaling_test,
+    long_horizon_test,
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,9 +38,9 @@ def prepare_df():
 
 
 def prepare_features(df):
-    t = extract_target(df)
-    c = extract_covariates(df)  # (T,F) numpy array, we keep it only for signature compatibility
-    return t, c
+    target = extract_target(df)
+    covariates = extract_covariates(df)  # (T, F) numpy array
+    return target, covariates
 
 
 def test_noise():
@@ -105,3 +109,47 @@ def test_trend_break():
 
     assert "median" in pred
     assert os.path.exists(os.path.join(OUT_DIR, "trend_break_output.csv"))
+
+
+def test_feature_drop():
+    df = prepare_df()
+    target, cov = prepare_features(df)
+    model = load_model("amazon/chronos-2")
+
+    pred = feature_drop_test(model, df, target, cov)
+
+    assert "median" in pred
+    assert os.path.exists(os.path.join(OUT_DIR, "feature_drop_output.csv"))
+
+
+def test_partial_mask():
+    df = prepare_df()
+    target, cov = prepare_features(df)
+    model = load_model("amazon/chronos-2")
+
+    pred = partial_mask_test(model, df, target, cov)
+
+    assert "median" in pred
+    assert os.path.exists(os.path.join(OUT_DIR, "partial_mask_output.csv"))
+
+
+def test_scaling():
+    df = prepare_df()
+    target, cov = prepare_features(df)
+    model = load_model("amazon/chronos-2")
+
+    pred = scaling_test(model, df, target, cov)
+
+    assert "median" in pred
+    assert os.path.exists(os.path.join(OUT_DIR, "scaling_output.csv"))
+
+
+def test_long_horizon():
+    df = prepare_df()
+    target, cov = prepare_features(df)
+    model = load_model("amazon/chronos-2")
+
+    pred = long_horizon_test(model, df, target, cov)
+
+    assert "median" in pred
+    assert os.path.exists(os.path.join(OUT_DIR, "long_horizon_output.csv"))
