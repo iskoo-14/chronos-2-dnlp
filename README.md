@@ -1,15 +1,18 @@
 # DNLP Project – Chronos 2 Time Series Forecasting
 
-!!!! NEEDED PYTHON 3.10.X !!!
+**Required Python version: 3.10.x**
 
-This project implements a complete zero shot forecasting pipeline using Chronos 2 by Amazon. The goal is to evaluate univariate forecasting, multivariate forecasting with covariates, and the robustness of the model under controlled perturbations. We use the Rossmann Store Sales dataset, which contains daily sales and external features such as promotions and holidays.
+This project implements a complete zero-shot time series forecasting pipeline using Chronos 2 by Amazon.  
+The goal is to evaluate univariate forecasting, multivariate forecasting with covariates, and the robustness of the model under controlled perturbations.
 
-All experiments are zero shot. No model training is required.
+The Rossmann Store Sales dataset is used, containing daily sales and external features such as promotions and holidays.
 
-===============================================================================
-Project Structure
-===============================================================================
+All experiments are zero-shot.  
+No model training is performed.
 
+## Project Structure
+
+```text
 chronos-2-dnlp/
 │
 ├── main.py                        main forecasting pipeline
@@ -17,232 +20,123 @@ chronos-2-dnlp/
 ├── src/
 │   ├── data/
 │   │   ├── make_dataset.py        loading, cleaning, feature engineering
-│   │   ├── train.csv              raw input
-│   │   └── store.csv              raw input
+│   │   ├── train.csv              raw input data
+│   │   └── store.csv              raw input data
 │   │
 │   ├── features/
-│   │   └── build_features.py      extracts target and covariates
+│   │   └── build_features.py      target and covariate extraction
 │   │
 │   ├── models/
-│       ├── predict_model.py       Chronos 2 inference
-│       └── robustness.py          noise, shuffle, missing future tests
+│   │   ├── predict_model.py       Chronos 2 inference
+│   │   └── robustness.py          robustness experiments
 │
 ├── evaluation/
-│   └── compare_results.py         compares univariate, covariate, noise, shuffle, missing future
+│   └── compare_results.py         metrics and comparison report
 │
-└── tests/
-    ├── test_environment.py        pytest environment checks
-    └── test_robustness.py         pytest robustness tests
+├── tests/
+│   ├── test_environment.py        pytest environment checks
+│   └── test_robustness.py         pytest robustness tests
+│
+└── outputs/
+    ├── *.csv                      forecasts and ground truth
+    └── figures/                  plots and visualizations
+```
 
-Outputs are stored in: outputs/
+## 1. Data Preparation
 
-===============================================================================
-1. Data Preparation
-===============================================================================
+The script `make_dataset.py` performs:
+- merge of `train.csv` and `store.csv`
+- removal of days when the store was closed
+- handling of missing values
+- creation of calendar features (day, month, year, week number)
+- conversion of categorical and mixed-type features
 
-make_dataset.py performs:
-- merge of train.csv and store.csv
-- removal of days when store was closed
-- filling missing values
-- creation of time features such as day, month, year, week number
-- conversion of mixed types and categorical values
+The processed dataset is saved to:
+`src/data/processed_rossmann.csv`
 
-The processed dataset is saved at:
-src/data/processed_rossmann.csv
-
-===============================================================================
-2. Feature Extraction
-===============================================================================
+## 2. Feature Extraction
 
 We extract:
-- Sales column as target
-- all engineered columns as covariates
+- Target: Sales
+- Covariates: all engineered numerical features
 
-Covariates are converted into tensors with shape required by Chronos 2:
-- past covariates: number_of_features x sequence_length
-- future covariates: number_of_features x prediction_horizon
+Covariates are formatted to match the Chronos 2 API:
+- past covariates shape: num_features × sequence_length
+- future covariates shape: num_features × prediction_horizon
 
-===============================================================================
-3. Chronos 2 Model
-===============================================================================
+## 3. Chronos 2 Model
 
 Model used:
-amazon/chronos-2
-https://huggingface.co/amazon/chronos-2
+- amazon/chronos-2
+- https://huggingface.co/amazon/chronos-2
 
-Features:
-- works zero shot
-- accepts multivariate inputs
-- uses past and future covariates
-- produces quantile forecasts: p10, median, p90
-- scales automatically
+Key properties:
+- zero-shot forecasting
+- supports multivariate inputs
+- accepts past and future covariates
+- produces probabilistic forecasts
+- outputs quantiles: p10, median, p90
+- automatic scaling
 
-===============================================================================
-4. Forecasting Outputs
-===============================================================================
+## 4. Forecasting Outputs
 
-### Univariate Forecast
-Uses only Sales.
-Output: outputs/univariate.csv
+Univariate Forecast  
+Uses only the Sales time series.  
+Output: `outputs/univariate.csv`
 
-### Covariate Forecast
-Uses Sales plus all covariates.
-Output: outputs/covariate.csv
+Covariate Forecast  
+Uses Sales together with all covariates.  
+Output: `outputs/covariate.csv`
 
-===============================================================================
-5. Robustness Experiments
-===============================================================================
+## 5. Robustness Experiments
 
-We evaluate whether Chronos 2 uses covariates meaningfully.
+Noise Test  
+Adds a purely random covariate.  
+Output: `outputs/noise_output.csv`
 
-### Noise Test
-Adds a purely random noise covariate.
-A robust model should ignore it.
-Output: outputs/noise_output.csv
+Shuffle Test  
+Randomly shuffles the Promo column to break temporal correlation.  
+Output: `outputs/shuffle_output.csv`
 
-### Shuffle Test
-Randomly shuffles the Promo column.
-Breaks correlation. Forecasts should degrade.
-Output: outputs/shuffle_output.csv
+Missing Future Test  
+Masks future values of SchoolHoliday.  
+Output: `outputs/missing_future_output.csv`
 
-### Missing Future Test
-Masks future values of SchoolHoliday.
-Removes known future information. Accuracy should worsen.
-Output: outputs/missing_future_output.csv
+## 6. Evaluation
 
-===============================================================================
-Using the Makefile
-===============================================================================
+Evaluation is performed using:
+- temporal split (last 30 days as ground truth)
+- Weighted Quantile Loss (WQL)
+- comparison between univariate and covariate forecasts
+- relative comparisons for robustness tests
 
-### Create virtual environment
-make env
+Results are written to:
+`outputs/comparison_report.txt`
 
-### Install PyTorch with GPU support (optional)
-make gpu
+## Using the Makefile
 
-### Run main forecasting pipeline
-make run
+make env  
+make gpu  
+make run  
+make envtest  
+make robustness  
+make test  
+make fullrun  
 
-### Run environment tests
-make envtest
+## Running Without Make (Windows)
 
-### Run robustness tests
-make robustness
-
-### Run all tests
-make test
-
-### Full project run for users who already have an environment
-make fullrun
-
-===============================================================================
-Running the Project Without Make (Windows)
-===============================================================================
-
-Use PowerShell setup script:
-
-powershell -ExecutionPolicy Bypass -File setup.ps1
-
-This script:
-- creates the virtual environment
-- installs dependencies
-- installs GPU specific PyTorch if requested
-- verifies Chronos 2 installation
-- checks the environment
+PowerShell setup:
+`powershell -ExecutionPolicy Bypass -File setup.ps1`
 
 After setup:
-.venv\Scripts\python main.py
+`.venv\Scripts\python main.py`
 
 To run tests manually:
-.venv\Scripts\pytest -q
+`.venv\Scripts\pytest -q`
 
-===============================================================================
-Running the Project Using Windows Batch Files
-===============================================================================
+## Notes
 
-These files automate the pipeline for Windows users.
-
-All .bat files:
-- activate the virtual environment
-- set PYTHONPATH automatically
-- show clear status messages
-- pause at the end so you can read results
-
-If a script ends with:
-Press any key to continue...
-you can close it by pressing Enter, Space, or any key.
-
----
-
-### run_main.bat
-Runs only the forecasting pipeline.
-Double click:
-run_main.bat
-
----
-
-### run_tests.bat
-Runs pytest tests:
-- environment tests
-- robustness tests
-
-Double click:
-run_tests.bat
-
----
-
-### run_pipeline_and_tests.bat
-Runs full pipeline and then all robustness tests.
-Recommended for full validation.
-
-Double click:
-run_pipeline_and_tests.bat
-
----
-
-### evaluation.bat
-Generates:
-- comparison_report.txt
-- plots in outputs/figures
-
-Double click:
-evaluation.bat
-
----
-
-### run_visuals.bat
-Generates only the plots.
-Useful if you want figures for the report without recomputing forecasts.
-
-Double click:
-run_visuals.bat
-
----
-
-===============================================================================
-Installing Make on Windows (optional)
-===============================================================================
-
-Using Chocolatey:
-choco install make
-
-Git Bash also includes make.
-
-===============================================================================
-Requirements
-===============================================================================
-
-All dependencies are listed in requirements.txt.
-
-Install with:
-pip install -r requirements.txt
-
-===============================================================================
-Notes
-===============================================================================
-
-- All forecasts include p10, median, p90 quantiles.
-- Chronos 2 runs completely zero shot.
+- All forecasts include p10, median, and p90 quantiles.
+- Chronos 2 runs completely zero-shot.
 - Robustness tests measure whether the model truly leverages covariates.
-- The pipeline is modular and can be extended easily.
-
+- The pipeline is modular and easily extensible.
