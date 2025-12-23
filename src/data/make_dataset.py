@@ -2,6 +2,13 @@ import pandas as pd
 import numpy as np
 import os
 
+def temporal_split(df, test_size=30):
+    if len(df) <= test_size:
+        raise ValueError("Dataset too small for temporal split")
+
+    df_past = df.iloc[:-test_size].reset_index(drop=True)
+    df_test = df.iloc[-test_size:].reset_index(drop=True)
+    return df_past, df_test
 
 def load_raw_data(train_path, store_path):
     train = pd.read_csv(train_path, low_memory=False)

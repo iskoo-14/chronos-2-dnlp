@@ -47,10 +47,87 @@ def plot_forecast(df, title, fname, color="#1f77b4"):
     plt.close()
     print(f"Saved plot: {fname}")
 
+def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
+    x = np.arange(len(y_true))
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(x, df_pred["median"], label="Forecast (median)", color=color, linewidth=2)
+    plt.fill_between(
+        x,
+        df_pred["p10"],
+        df_pred["p90"],
+        color=color,
+        alpha=0.25,
+        label="Forecast interval"
+    )
+    plt.plot(x, y_true, label="Ground truth", color="black", linestyle="--", linewidth=2)
+
+    plt.title(title)
+    plt.xlabel("Forecast horizon")
+    plt.ylabel("Sales")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIG, fname))
+    plt.close()
+    print(f"Saved plot: {fname}")
 
 # ------------------------------------------------------------
 # COMPARISON PLOTS (ONLY IF SAME HORIZON)
 # ------------------------------------------------------------
+
+def plot_case_study(
+    y_past,
+    y_future,
+    df_pred,
+    title,
+    fname,
+    color="#1f77b4"
+):
+    T_past = len(y_past)
+    H = len(y_future)
+
+    # timeline continua
+    x = np.arange(T_past + H)
+
+    # serie reale continua (past + future)
+    y_real = np.concatenate([y_past, y_future])
+
+    plt.figure(figsize=(12, 4))
+
+    # linea reale continua
+    plt.plot(x, y_real, color="black", label="Real series")
+
+    # forecast (solo nel futuro)
+    x_fut = x[T_past:]
+    plt.plot(
+        x_fut,
+        df_pred["median"],
+        color=color,
+        linewidth=2,
+        label="Forecast (median)"
+    )
+
+    plt.fill_between(
+        x_fut,
+        df_pred["p10"],
+        df_pred["p90"],
+        color=color,
+        alpha=0.25,
+        label="Forecast interval"
+    )
+
+    # linea verticale di split
+    plt.axvline(T_past - 1, linestyle="--", color="gray")
+
+    plt.title(title)
+    plt.xlabel("Time")
+    plt.ylabel("Sales")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIG, fname))
+    plt.close()
 
 def _same_length(a, b):
     return len(a) == len(b)
@@ -143,6 +220,12 @@ if __name__ == "__main__":
 
     uni = load("univariate.csv")
     cov = load("covariate.csv")
+    df_full = pd.read_csv("src/data/processed_rossmann.csv")
+    y_full = df_full["Sales"].values
+    y_past = y_full[-90:-30]   # 60 giorni di contesto
+    y_future = y_full[-30:]
+    gt = load("ground_truth.csv")
+    y_true = gt["y_true"].values if gt is not None else None
 
     noise = load("noise_output.csv")
     strong_noise = load("strong_noise_output.csv")
@@ -167,6 +250,46 @@ if __name__ == "__main__":
 
     if long_horizon is not None:
         plot_forecast(long_horizon, "Long Horizon Forecast (90 steps)", "long_horizon.png")
+
+    # --------------------------------------------------------
+    # FORECAST VS GROUND TRUTH (BASELINE ONLY)
+    # --------------------------------------------------------
+
+    if uni is not None and y_true is not None:
+        plot_forecast_vs_truth(
+            uni,
+            y_true,
+            "Univariate Forecast vs Ground Truth",
+            "univariate_vs_truth.png",
+            color="#7f7f7f"
+        )
+
+    if cov is not None and y_true is not None:
+        plot_forecast_vs_truth(
+            cov,
+            y_true,
+            "Covariate Forecast vs Ground Truth",
+            "covariate_vs_truth.png",
+            color="#1f77b4"
+        )
+
+    if cov is not None and y_past is not None and y_future is not None:
+        plot_case_study(
+            y_past,
+            y_future,
+            cov,
+            "Case Study: Covariates vs Ground Truth",
+            "case_study_covariates.png"
+        )
+
+    if uni is not None and y_past is not None and y_future is not None:
+        plot_case_study(
+            y_past,
+            y_future,
+            uni,
+            "Case Study: Univariate vs Ground Truth",
+            "case_study_univariate.png"
+        )
 
     # --------------------------------------------------------
     # ROBUSTNESS COMPARISONS

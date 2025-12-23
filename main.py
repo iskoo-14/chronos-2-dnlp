@@ -4,7 +4,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 import pandas as pd
 
 from src.data.make_dataset import (
-    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed
+    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed, temporal_split
 )
 from src.features.build_features import extract_target, extract_covariates
 from src.models.predict_model import (
@@ -40,13 +40,29 @@ if __name__ == "__main__":
 
     processed_path = os.path.join(base, "src/data/processed_rossmann.csv")
     save_processed(df, processed_path)
+    # ------------------------------------------------------------
+    # TEMPORAL SPLIT (ZERO-SHOT EVALUATION)
+    # ------------------------------------------------------------
+    print("Applying temporal split...")
+    df_past, df_test = temporal_split(df, test_size=30)
+    # ------------------------------------------------------------
+    # SAVE GROUND TRUTH (FOR WQL EVALUATION)
+    # ------------------------------------------------------------
+    y_true = df_test["Sales"].values
+
+    pd.DataFrame(
+        {"y_true": y_true}
+    ).to_csv(os.path.join(output_dir, "ground_truth.csv"), index=False)
+
+    print("Saved ground_truth.csv")
 
     # ------------------------------------------------------------
     # FEATURE EXTRACTION
     # ------------------------------------------------------------
-    print("Extracting features...")
-    target = extract_target(df)
-    covariates = extract_covariates(df)
+    print("Extracting features (past only)...")
+    target_past = extract_target(df_past)
+    covariates_past = extract_covariates(df_past)
+
 
     # ------------------------------------------------------------
     # LOAD MODEL
@@ -58,7 +74,7 @@ if __name__ == "__main__":
     # UNIVARIATE FORECAST
     # ------------------------------------------------------------
     print("Running univariate forecast...")
-    uni_out = predict_univariate(model, target)
+    uni_out = predict_univariate(model, target_past)
 
     pd.DataFrame({
         "p10": uni_out["p10"],
@@ -71,7 +87,7 @@ if __name__ == "__main__":
     # COVARIATE FORECAST
     # ------------------------------------------------------------
     print("Running covariate forecast...")
-    cov_out = predict_covariates(model, target, covariates, covariates)
+    cov_out = predict_covariates(model, target_past, covariates_past, covariates_past)
 
     pd.DataFrame({
         "p10": cov_out["p10"],

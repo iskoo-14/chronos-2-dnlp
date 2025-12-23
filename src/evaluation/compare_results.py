@@ -9,6 +9,22 @@ OUT = "outputs"
 # UTILITIES
 # ------------------------------------------------------------
 
+def quantile_loss(y_true, y_pred, q):
+    diff = y_true - y_pred
+    return np.maximum(q * diff, (q - 1) * diff)
+
+
+def weighted_quantile_loss(y_true, preds, quantiles):
+    denom = np.sum(np.abs(y_true)) + 1e-9
+    total = 0.0
+
+    for q in quantiles:
+        diff = y_true - preds[q]
+        loss = np.maximum(q * diff, (q - 1) * diff)
+        total += np.sum(loss)
+
+    return float(2 * total / denom / len(quantiles))
+
 def load(name):
     path = os.path.join(OUT, name)
     if not os.path.exists(path):
@@ -43,9 +59,7 @@ def pct_diff(a, b):
 # ------------------------------------------------------------
 
 def compare(base, test, label_base, label_test):
-    """
-    Compare two forecasts with the SAME horizon length.
-    """
+
     m1 = base["median"].values
     m2 = test["median"].values
 
@@ -81,6 +95,8 @@ if __name__ == "__main__":
     # Baselines
     uni = load("univariate.csv")
     cov = load("covariate.csv")
+    gt = load("ground_truth.csv")
+    y_true = gt["y_true"].values
 
     # Robustness tests (same horizon = 30)
     noise = load("noise_output.csv")
@@ -108,6 +124,36 @@ if __name__ == "__main__":
         stats = compare(uni, cov, "Univariate", "Covariates")
         for k, v in stats.items():
             report.append(f"{k}: {v:.4f}")
+        report.append("")
+
+    quantiles = [0.1, 0.5, 0.9]
+
+    if uni is not None and gt is not None:
+        wql_uni = weighted_quantile_loss(
+            y_true,
+            {
+                0.1: uni["p10"].values,
+                0.5: uni["median"].values,
+                0.9: uni["p90"].values,
+            },
+            quantiles
+        )
+        report.append("> Univariate vs Ground Truth")
+        report.append(f"WQL: {wql_uni:.4f}")
+        report.append("")
+
+    if cov is not None and gt is not None:
+        wql_cov = weighted_quantile_loss(
+            y_true,
+            {
+                0.1: cov["p10"].values,
+                0.5: cov["median"].values,
+                0.9: cov["p90"].values,
+            },
+            quantiles
+        )
+        report.append("> Covariates vs Ground Truth")
+        report.append(f"WQL: {wql_cov:.4f}")
         report.append("")
 
     # --------------------------------------------------------
