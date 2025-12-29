@@ -96,6 +96,8 @@ def predict_covariates(model, series, past_cov, future_cov_full, horizon: int = 
 
     F, T = past_cov.shape
 
+    FU, k = future_cov_full.shape
+    
     if debug:
         print("\n=== DEBUG predict_covariates ===")
         print(f"Past cov shape (F,T) = {past_cov.shape}")
@@ -107,9 +109,9 @@ def predict_covariates(model, series, past_cov, future_cov_full, horizon: int = 
 
     # future cov dict: each feature is 1D length horizon
     future_cov_dict = {}
-    for i in range(F):
+    for i in range(FU):
         full_series = future_cov_full[i].flatten()  # length T
-        future_slice = full_series[-horizon:]       # length horizon
+        future_slice = full_series      # length horizon
 
         if future_slice.numel() != horizon:
             raise ValueError(

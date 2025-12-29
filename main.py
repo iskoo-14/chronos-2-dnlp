@@ -4,7 +4,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 import pandas as pd
 
 from src.data.make_dataset import (
-    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed, temporal_split
+    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed, temporal_split, select_important_features
 )
 from src.features.build_features import extract_target, extract_covariates
 from src.models.predict_model import (
@@ -35,10 +35,12 @@ if __name__ == "__main__":
 
     print("Cleaning data...")
     df = clean_data(df)
-    df = add_time_features(df)
+    df = select_important_features(df)
+    # df = add_time_features(df)
     df = fix_mixed_types(df)
 
     processed_path = os.path.join(base, "src/data/processed_rossmann.csv")
+    # processed_path = os.path.join(base, "src/data/processed_rossmann_important.csv")
     save_processed(df, processed_path)
     # ------------------------------------------------------------
     # TEMPORAL SPLIT (ZERO-SHOT EVALUATION)
