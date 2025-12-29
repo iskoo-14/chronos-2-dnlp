@@ -1,99 +1,109 @@
+# =========================
+# FILE: main.py
+# =========================
 import os
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import pandas as pd
 
 from src.data.make_dataset import (
-    load_raw_data, clean_data, add_time_features, fix_mixed_types, save_processed, temporal_split
+    load_raw_data,
+    clean_data,
+    add_time_features,
+    select_important_features,
+    fix_mixed_types,
+    to_chronos_df,
+    temporal_split,
+    save_processed,
 )
-from src.features.build_features import extract_target, extract_covariates
 from src.models.predict_model import (
-    load_model, predict_univariate, predict_covariates
+    load_model,
+    predict_df_univariate,
+    predict_df_covariates,
+    save_quantiles_csv,
 )
 
 
 def ensure_output_folder(path="outputs"):
-    if not os.path.exists(path):
-        os.makedirs(path)
+    os.makedirs(path, exist_ok=True)
     return path
 
 
 if __name__ == "__main__":
-    print("=== DNLP PIPELINE STARTED ===")
+    print("===================================================")
+    print("=== DNLP PIPELINE STARTED (Chronos quickstart aligned) ===")
+    print("===================================================")
 
     base = os.path.dirname(os.path.abspath(__file__))
-    output_dir = ensure_output_folder("outputs")
+    output_dir = ensure_output_folder(os.path.join(base, "outputs"))
 
-    # ------------------------------------------------------------
-    # PREPROCESSING
-    # ------------------------------------------------------------
-    print("Loading raw data...")
     train_path = os.path.join(base, "src/data/train.csv")
     store_path = os.path.join(base, "src/data/store.csv")
 
-    df = load_raw_data(train_path, store_path)
+    STORE_ID = 1
+    HORIZON = 30
+    CONTEXT_LEN = 256
 
-    print("Cleaning data...")
-    df = clean_data(df)
+    print("[STEP] Loading raw data (single store)...")
+    df = load_raw_data(train_path, store_path, store_id=STORE_ID)
+
+    print("[STEP] Cleaning (keep closed days)...")
+    df = clean_data(df, keep_closed_days=True)
+
+    print("[STEP] Adding time features...")
     df = add_time_features(df)
+
+    print("[STEP] Selecting paper-style covariates...")
+    df = select_important_features(df)
+
+    print("[STEP] Fixing mixed types...")
     df = fix_mixed_types(df)
 
-    processed_path = os.path.join(base, "src/data/processed_rossmann.csv")
+    print("[STEP] Converting to Chronos dataframe format...")
+    df = to_chronos_df(df)
+
+    processed_path = os.path.join(base, "src/data/processed_rossmann_single.csv")
     save_processed(df, processed_path)
-    # ------------------------------------------------------------
-    # TEMPORAL SPLIT (ZERO-SHOT EVALUATION)
-    # ------------------------------------------------------------
-    print("Applying temporal split...")
-    df_past, df_test = temporal_split(df, test_size=30)
-    # ------------------------------------------------------------
-    # SAVE GROUND TRUTH (FOR WQL EVALUATION)
-    # ------------------------------------------------------------
-    y_true = df_test["Sales"].values
 
-    pd.DataFrame(
-        {"y_true": y_true}
-    ).to_csv(os.path.join(output_dir, "ground_truth.csv"), index=False)
+    print("[STEP] Temporal split: last 30 days as ground truth...")
+    df_past, df_test = temporal_split(df, test_size=HORIZON)
 
-    print("Saved ground_truth.csv")
+    print(f"[INFO] Past length: {len(df_past)} | Test length: {len(df_test)}")
 
-    # ------------------------------------------------------------
-    # FEATURE EXTRACTION
-    # ------------------------------------------------------------
-    print("Extracting features (past only)...")
-    target_past = extract_target(df_past)
-    covariates_past = extract_covariates(df_past)
+    # keep last CONTEXT_LEN as context
+    if len(df_past) > CONTEXT_LEN:
+        df_past = df_past.iloc[-CONTEXT_LEN:].reset_index(drop=True)
+        print(f"[INFO] Context truncated to last {CONTEXT_LEN} rows")
 
+    gt_path = os.path.join(output_dir, "ground_truth.csv")
+    pd.DataFrame({"y_true": df_test["target"].values}).to_csv(gt_path, index=False)
+    print(f"[INFO] Saved ground truth: {gt_path}")
 
-    # ------------------------------------------------------------
-    # LOAD MODEL
-    # ------------------------------------------------------------
-    print("Loading Chronos-2 model...")
-    model = load_model("amazon/chronos-2")
+    print("[STEP] Loading Chronos-2 model...")
+    pipeline = load_model("amazon/chronos-2")
 
-    # ------------------------------------------------------------
-    # UNIVARIATE FORECAST
-    # ------------------------------------------------------------
-    print("Running univariate forecast...")
-    uni_out = predict_univariate(model, target_past)
+    # covariates sets (paper-style)
+    PAST_ONLY_COVS = ["Customers"]
+    KNOWN_FUTURE_COVS = ["Open", "Promo", "SchoolHoliday", "StateHoliday", "DayOfWeek"]
 
-    pd.DataFrame({
-        "p10": uni_out["p10"],
-        "median": uni_out["median"],
-        "p90": uni_out["p90"]
-    }).to_csv(os.path.join(output_dir, "univariate.csv"), index=False)
-    print("Saved univariate.csv")
+    # ----------------------------
+    # UNIVARIATE
+    # ----------------------------
+    print("[STEP] Running univariate forecast...")
+    context_uni = df_past[["id", "timestamp", "target"]].copy()
+    pred_uni = predict_df_univariate(pipeline, context_uni, horizon=HORIZON)
+    save_quantiles_csv(pred_uni, os.path.join(output_dir, "univariate.csv"))
 
-    # ------------------------------------------------------------
-    # COVARIATE FORECAST
-    # ------------------------------------------------------------
-    print("Running covariate forecast...")
-    cov_out = predict_covariates(model, target_past, covariates_past, covariates_past)
+    # ----------------------------
+    # COVARIATE (ICL) FORECAST
+    # ----------------------------
+    print("[STEP] Running covariate forecast (predict_df)...")
+    context_cov = df_past[["id", "timestamp", "target"] + PAST_ONLY_COVS + KNOWN_FUTURE_COVS].copy()
+    future_cov = df_test[["id", "timestamp"] + KNOWN_FUTURE_COVS].copy()
 
-    pd.DataFrame({
-        "p10": cov_out["p10"],
-        "median": cov_out["median"],
-        "p90": cov_out["p90"]
-    }).to_csv(os.path.join(output_dir, "covariate.csv"), index=False)
-    print("Saved covariate.csv")
+    pred_cov = predict_df_covariates(pipeline, context_cov, future_cov, horizon=HORIZON)
+    save_quantiles_csv(pred_cov, os.path.join(output_dir, "covariate.csv"))
 
+    print("===================================================")
     print("=== PIPELINE COMPLETED SUCCESSFULLY ===")
+    print("===================================================")

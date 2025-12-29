@@ -1,10 +1,13 @@
+# =========================
+# FILE: src/models/robustness.py
+# (FULL SUITE, aligned to predict_df + single-store df)
+# =========================
 import os
 import numpy as np
 import pandas as pd
 
-# ------------------------------------------------------------
-# OUTPUT UTILS
-# ------------------------------------------------------------
+from src.models.predict_model import predict_df_covariates, save_quantiles_csv
+
 
 def _ensure_outputs_dir():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,276 +16,237 @@ def _ensure_outputs_dir():
     return out_dir
 
 
-def _save_pred_csv(pred: dict, filename: str):
-    out_dir = _ensure_outputs_dir()
-    path = os.path.join(out_dir, filename)
-    pd.DataFrame(
-        {
-            "p10": pred["p10"],
-            "median": pred["median"],
-            "p90": pred["p90"],
-        }
-    ).to_csv(path, index=False)
-    return path
+def _make_context_future(df, horizon=30, context_len=256):
+    if "timestamp" not in df.columns:
+        raise ValueError("df must contain 'timestamp' column")
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
+    if len(df) <= horizon:
+        raise ValueError("Not enough rows for the requested horizon")
+
+    start = max(0, len(df) - (context_len + horizon))
+    mid = len(df) - horizon
+
+    context_df = df.iloc[start:mid].reset_index(drop=True)
+    future_df = df.iloc[mid:].reset_index(drop=True)
+
+    return context_df, future_df
+
+
+def _base_covariates():
+    past_only = ["Customers"]
+    future_covs = ["Open", "Promo", "SchoolHoliday", "StateHoliday", "DayOfWeek"]
+    return past_only, future_covs
+
+
+def _prepare_cov_frames(context_df, future_df, past_only, future_covs, extra_covs=None, drop_covs=None):
+    if extra_covs is None:
+        extra_covs = []
+    if drop_covs is None:
+        drop_covs = []
+
+    # build lists
+    past_only_use = [c for c in past_only if c not in drop_covs]
+    future_covs_use = [c for c in future_covs if c not in drop_covs]
+    extra_covs_use = [c for c in extra_covs if c not in drop_covs]
+
+    # context: id, timestamp, target + covs
+    ctx_cols = ["id", "timestamp", "target"] + past_only_use + future_covs_use + extra_covs_use
+    fut_cols = ["id", "timestamp"] + future_covs_use + extra_covs_use
+
+    # validate
+    for c in ctx_cols:
+        if c not in context_df.columns:
+            raise ValueError(f"Missing '{c}' in context_df")
+    for c in fut_cols:
+        if c not in future_df.columns:
+            raise ValueError(f"Missing '{c}' in future_df")
+
+    context_cov = context_df[ctx_cols].copy()
+    future_cov = future_df[fut_cols].copy()
+
+    return context_cov, future_cov
+
+
+def _run_predict_df(model, context_df, future_df, horizon, out_name):
+    pred = predict_df_covariates(model, context_df, future_df, horizon=horizon)
+    out_path = os.path.join(_ensure_outputs_dir(), out_name)
+    save_quantiles_csv(pred, out_path)
+    return pred
 
 
 # ------------------------------------------------------------
-# CHRONOS TASK BUILDERS (CORRECT API)
+# ROBUSTNESS TESTS (relative to baseline covariate forecast)
 # ------------------------------------------------------------
 
-def _to_1d_float(x):
-    arr = np.asarray(x)
-    if arr.ndim != 1:
-        arr = arr.reshape(-1)
-    return arr.astype(np.float32)
+def noise_test(model, df, horizon=30, seed=0):
+    print("[ROBUSTNESS] Noise test: add random covariate")
+    np.random.seed(seed)
 
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
 
-def _build_task_from_df(
-    df,
-    target,
-    horizon=30,
-    known_future_cols=None,
-    extra_past_cols=None,
-):
-    if known_future_cols is None:
-        known_future_cols = []
-    if extra_past_cols is None:
-        extra_past_cols = []
+    # add noise covariate to BOTH context and future
+    ctx = ctx.copy()
+    fut = fut.copy()
+    ctx["RandomNoise"] = np.random.randn(len(ctx)).astype(np.float32)
+    fut["RandomNoise"] = np.random.randn(len(fut)).astype(np.float32)
 
-    T = len(target)
-    target_1d = _to_1d_float(target)
-
-    drop_cols = {"Sales", "Date"}
-    numeric_cols = [
-        c
-        for c in df.columns
-        if c not in drop_cols and pd.api.types.is_numeric_dtype(df[c])
-    ]
-
-    for c in known_future_cols + extra_past_cols:
-        if c not in df.columns:
-            raise ValueError(f"Required column '{c}' not found in df")
-
-    cov_cols = sorted(set(numeric_cols + known_future_cols + extra_past_cols))
-
-    past_cov = {}
-    for c in cov_cols:
-        v = df[c].to_numpy(dtype=np.float32)
-        v = np.nan_to_num(v, nan=0.0)
-        if len(v) != T:
-            raise ValueError(f"Covariate '{c}' length mismatch")
-        past_cov[c] = v
-
-    fut_cov = {}
-    for c in known_future_cols:
-        fut = past_cov[c][-horizon:]
-        if len(fut) != horizon:
-            raise ValueError(f"Future cov '{c}' must have length {horizon}")
-        fut_cov[c] = fut
-
-    task = {
-        "target": target_1d,
-        "past_covariates": past_cov,
-    }
-    if len(fut_cov) > 0:
-        task["future_covariates"] = fut_cov
-
-    return task
-
-
-def _run_chronos(
-    model,
-    df,
-    target,
-    horizon=30,
-    known_future_cols=None,
-    extra_past_cols=None,
-):
-    task = _build_task_from_df(
-        df=df,
-        target=target,
-        horizon=horizon,
-        known_future_cols=known_future_cols,
-        extra_past_cols=extra_past_cols,
+    context_cov, future_cov = _prepare_cov_frames(
+        ctx, fut, past_only, future_covs, extra_covs=["RandomNoise"]
     )
-
-    out = model.predict([task], prediction_length=horizon)[0]
-    out_np = out.detach().cpu().numpy()
-
-    qdim = out_np.shape[1]
-
-    return {
-        "p10": out_np[0, 0, :].tolist(),
-        "median": out_np[0, qdim // 2, :].tolist(),
-        "p90": out_np[0, -1, :].tolist(),
-    }
+    return _run_predict_df(model, context_cov, future_cov, horizon, "noise_output.csv")
 
 
-# ------------------------------------------------------------
-# ROBUSTNESS TESTS
-# ------------------------------------------------------------
+def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0):
+    print("[ROBUSTNESS] Strong noise: add Gaussian noise to covariates")
+    np.random.seed(seed)
 
-def noise_test(model, df, target, covariates=None, horizon=30):
-    df2 = df.copy()
-    df2["NoiseRandom"] = np.random.randn(len(df2)).astype(np.float32)
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
 
-    pred = _run_chronos(
-        model,
-        df2,
-        target,
-        horizon=horizon,
-        known_future_cols=[],
-        extra_past_cols=["NoiseRandom"],
+    ctx2 = ctx.copy()
+    fut2 = fut.copy()
+
+    # add noise to ALL covariates (not target, not timestamp)
+    noisy_cols = past_only + future_covs
+    for c in noisy_cols:
+        ctx2[c] = (ctx2[c].astype(float) + sigma * np.random.randn(len(ctx2))).astype(np.float32)
+        if c in fut2.columns:
+            fut2[c] = (fut2[c].astype(float) + sigma * np.random.randn(len(fut2))).astype(np.float32)
+
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "strong_noise_output.csv")
+
+
+def shuffle_test(model, df, horizon=30, seed=0):
+    print("[ROBUSTNESS] Shuffle test: shuffle Promo to break temporal correlation")
+    np.random.seed(seed)
+
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
+
+    ctx2 = ctx.copy()
+    fut2 = fut.copy()
+
+    if "Promo" not in ctx2.columns or "Promo" not in fut2.columns:
+        raise ValueError("Promo not found in df")
+
+    # shuffle promo across combined (past+future)
+    promo_all = np.concatenate([ctx2["Promo"].values, fut2["Promo"].values])
+    promo_all = np.random.permutation(promo_all)
+
+    ctx2["Promo"] = promo_all[:len(ctx2)]
+    fut2["Promo"] = promo_all[len(ctx2):]
+
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "shuffle_output.csv")
+
+
+def missing_future_test(model, df, horizon=30):
+    print("[ROBUSTNESS] Missing future: mask future SchoolHoliday")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
+
+    fut2 = fut.copy()
+    if "SchoolHoliday" not in fut2.columns:
+        raise ValueError("SchoolHoliday not found in df")
+    fut2["SchoolHoliday"] = 0
+
+    context_cov, future_cov = _prepare_cov_frames(ctx, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "missing_future_output.csv")
+
+
+def time_shift_test(model, df, horizon=30, shift=7):
+    print("[ROBUSTNESS] Time shift: shift Promo forward/backward")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
+
+    if "Promo" not in ctx.columns or "Promo" not in fut.columns:
+        raise ValueError("Promo not found in df")
+
+    ctx2 = ctx.copy()
+    fut2 = fut.copy()
+
+    promo_all = np.concatenate([ctx2["Promo"].values, fut2["Promo"].values])
+    promo_all = np.roll(promo_all, shift)
+
+    ctx2["Promo"] = promo_all[:len(ctx2)]
+    fut2["Promo"] = promo_all[len(ctx2):]
+
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "time_shift_output.csv")
+
+
+def trend_break_test(model, df, horizon=30, jump=1.0):
+    print("[ROBUSTNESS] Trend break: structural change in Promo")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
+
+    if "Promo" not in ctx.columns or "Promo" not in fut.columns:
+        raise ValueError("Promo not found in df")
+
+    ctx2 = ctx.copy()
+    fut2 = fut.copy()
+
+    # introduce a jump in second half of FUTURE promo
+    half = len(fut2) // 2
+    fut2.loc[half:, "Promo"] = (fut2.loc[half:, "Promo"].astype(float) + jump).astype(np.float32)
+
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "trend_break_output.csv")
+
+
+def feature_drop_test(model, df, horizon=30, drop_feature="Promo"):
+    print(f"[ROBUSTNESS] Feature drop: remove '{drop_feature}' from covariates")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
+
+    context_cov, future_cov = _prepare_cov_frames(
+        ctx, fut, past_only, future_covs, drop_covs=[drop_feature]
     )
-    _save_pred_csv(pred, "noise_output.csv")
-    return pred
+    return _run_predict_df(model, context_cov, future_cov, horizon, "feature_drop_output.csv")
 
 
-def strong_noise_test(model, df, target, covariates=None, horizon=30, scale=10.0):
-    df2 = df.copy()
+def partial_mask_test(model, df, horizon=30, frac=0.3):
+    print("[ROBUSTNESS] Partial mask: mask last portion of Promo history")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
 
-    drop_cols = {"Sales", "Date"}
-    numeric_cols = [
-        c
-        for c in df2.columns
-        if c not in drop_cols and pd.api.types.is_numeric_dtype(df2[c])
-    ]
+    if "Promo" not in ctx.columns:
+        raise ValueError("Promo not found in df")
 
-    for c in numeric_cols:
-        v = df2[c].to_numpy(dtype=np.float32)
-        v = np.nan_to_num(v, nan=0.0)
-        df2[c] = v + scale * np.random.randn(len(v)).astype(np.float32)
+    ctx2 = ctx.copy()
+    n = len(ctx2)
+    k = int(max(1, frac * n))
+    ctx2.loc[n - k:, "Promo"] = 0
 
-    pred = _run_chronos(model, df2, target, horizon=horizon)
-    _save_pred_csv(pred, "strong_noise_output.csv")
-    return pred
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "partial_mask_output.csv")
 
 
-def shuffle_test(model, df, target, covariates=None, horizon=30):
-    if "Promo" not in df.columns:
-        raise ValueError("Promo not found for shuffle test")
+def scaling_test(model, df, horizon=30, scale=10.0):
+    print("[ROBUSTNESS] Scaling: rescale covariates")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
 
-    df2 = df.copy()
-    df2["Promo"] = df2["Promo"].sample(frac=1, random_state=42).to_numpy()
+    ctx2 = ctx.copy()
+    fut2 = fut.copy()
 
-    pred = _run_chronos(
-        model,
-        df2,
-        target,
-        horizon=horizon,
-        known_future_cols=["Promo"],
-    )
-    _save_pred_csv(pred, "shuffle_output.csv")
-    return pred
+    scale_cols = past_only + future_covs
+    for c in scale_cols:
+        ctx2[c] = (ctx2[c].astype(float) * scale).astype(np.float32)
+        if c in fut2.columns:
+            fut2[c] = (fut2[c].astype(float) * scale).astype(np.float32)
 
-
-def missing_future_test(model, df, target, covariates=None, horizon=30):
-    if "SchoolHoliday" not in df.columns:
-        raise ValueError("SchoolHoliday not found")
-
-    df2 = df.copy()
-    sh = df2["SchoolHoliday"].to_numpy(dtype=np.float32)
-    sh = np.nan_to_num(sh, nan=0.0)
-    sh[-horizon:] = 0.0
-    df2["SchoolHoliday"] = sh
-
-    pred = _run_chronos(
-        model,
-        df2,
-        target,
-        horizon=horizon,
-        known_future_cols=["SchoolHoliday"],
-    )
-    _save_pred_csv(pred, "missing_future_output.csv")
-    return pred
+    context_cov, future_cov = _prepare_cov_frames(ctx2, fut2, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "scaling_output.csv")
 
 
-def time_shift_test(model, df, target, covariates=None, horizon=30, shift=7):
-    if "Promo" not in df.columns:
-        raise ValueError("Promo not found")
+def long_horizon_test(model, df, horizon=90):
+    print("[ROBUSTNESS] Long horizon: descriptive stability test (90 steps)")
+    ctx, fut = _make_context_future(df, horizon=horizon)
+    past_only, future_covs = _base_covariates()
 
-    df2 = df.copy()
-    promo = df2["Promo"].to_numpy(dtype=np.float32)
-    promo = np.nan_to_num(promo, nan=0.0)
-    df2["Promo"] = np.roll(promo, shift)
-
-    pred = _run_chronos(
-        model,
-        df2,
-        target,
-        horizon=horizon,
-        known_future_cols=["Promo"],
-    )
-    _save_pred_csv(pred, "time_shift_output.csv")
-    return pred
-
-
-def trend_break_test(model, df, target, covariates=None, horizon=30, magnitude=0.5):
-    df2 = df.copy()
-
-    if "Promo" in df2.columns:
-        col = "Promo"
-    elif "SchoolHoliday" in df2.columns:
-        col = "SchoolHoliday"
-    else:
-        raise ValueError("Need Promo or SchoolHoliday")
-
-    v = df2[col].to_numpy(dtype=np.float32)
-    v = np.nan_to_num(v, nan=0.0)
-    split = int(0.8 * len(v))
-    v[split:] *= (1.0 + magnitude)
-    df2[col] = v
-
-    pred = _run_chronos(
-        model,
-        df2,
-        target,
-        horizon=horizon,
-        known_future_cols=[col],
-    )
-    _save_pred_csv(pred, "trend_break_output.csv")
-    return pred
-
-
-def feature_drop_test(model, df, target, covariates=None, horizon=30):
-    df2 = df.copy()
-    drop_cols = ["Promo", "SchoolHoliday"]
-    drop_cols = [c for c in drop_cols if c in df2.columns]
-    df2 = df2.drop(columns=drop_cols)
-
-    pred = _run_chronos(model, df2, target, horizon=horizon)
-    _save_pred_csv(pred, "feature_drop_output.csv")
-    return pred
-
-
-def partial_mask_test(model, df, target, covariates=None, horizon=30, mask_ratio=0.3):
-    df2 = df.copy()
-    split = int(len(df2) * (1 - mask_ratio))
-
-    for c in df2.columns:
-        if pd.api.types.is_numeric_dtype(df2[c]):
-            v = df2[c].to_numpy(dtype=np.float32)
-            v[split:] = 0.0
-            df2[c] = v
-
-    pred = _run_chronos(model, df2, target, horizon=horizon)
-    _save_pred_csv(pred, "partial_mask_output.csv")
-    return pred
-
-
-def scaling_test(model, df, target, covariates=None, horizon=30, scale=2.0):
-    df2 = df.copy()
-
-    for c in df2.columns:
-        if pd.api.types.is_numeric_dtype(df2[c]):
-            df2[c] = df2[c].to_numpy(dtype=np.float32) * scale
-
-    pred = _run_chronos(model, df2, target, horizon=horizon)
-    _save_pred_csv(pred, "scaling_output.csv")
-    return pred
-
-
-def long_horizon_test(model, df, target, covariates=None, horizon=90):
-    pred = _run_chronos(model, df, target, horizon=horizon)
-    _save_pred_csv(pred, "long_horizon_output.csv")
-    return pred
+    context_cov, future_cov = _prepare_cov_frames(ctx, fut, past_only, future_covs)
+    return _run_predict_df(model, context_cov, future_cov, horizon, "long_horizon_output.csv")

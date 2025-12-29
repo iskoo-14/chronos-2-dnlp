@@ -47,6 +47,7 @@ def plot_forecast(df, title, fname, color="#1f77b4"):
     plt.close()
     print(f"Saved plot: {fname}")
 
+
 def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
     x = np.arange(len(y_true))
 
@@ -72,6 +73,7 @@ def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
     plt.close()
     print(f"Saved plot: {fname}")
 
+
 # ------------------------------------------------------------
 # COMPARISON PLOTS (ONLY IF SAME HORIZON)
 # ------------------------------------------------------------
@@ -87,18 +89,12 @@ def plot_case_study(
     T_past = len(y_past)
     H = len(y_future)
 
-    # timeline continua
     x = np.arange(T_past + H)
-
-    # serie reale continua (past + future)
     y_real = np.concatenate([y_past, y_future])
 
     plt.figure(figsize=(12, 4))
-
-    # linea reale continua
     plt.plot(x, y_real, color="black", label="Real series")
 
-    # forecast (solo nel futuro)
     x_fut = x[T_past:]
     plt.plot(
         x_fut,
@@ -117,7 +113,6 @@ def plot_case_study(
         label="Forecast interval"
     )
 
-    # linea verticale di split
     plt.axvline(T_past - 1, linestyle="--", color="gray")
 
     plt.title(title)
@@ -128,6 +123,7 @@ def plot_case_study(
     plt.tight_layout()
     plt.savefig(os.path.join(FIG, fname))
     plt.close()
+
 
 def _same_length(a, b):
     return len(a) == len(b)
@@ -220,11 +216,14 @@ if __name__ == "__main__":
 
     uni = load("univariate.csv")
     cov = load("covariate.csv")
-    df_full = pd.read_csv("src/data/processed_rossmann.csv")
-    y_full = df_full["Sales"].values
-    y_past = y_full[-90:-30]   # 60 giorni di contesto
-    y_future = y_full[-30:]
     gt = load("ground_truth.csv")
+
+    df_full = pd.read_csv("src/data/processed_rossmann_single.csv")
+    y_full = df_full["target"].values
+
+    H = len(gt) if gt is not None else 30
+    y_past = y_full[-(H + 60):-H]
+    y_future = y_full[-H:]
     y_true = gt["y_true"].values if gt is not None else None
 
     noise = load("noise_output.csv")
