@@ -39,23 +39,66 @@ def temporal_split(df, test_size=30):
     df_test = df.iloc[-test_size:].reset_index(drop=True)
     return df_past, df_test
 
+import pandas as pd
 
-def has_continuous_history(df, min_length=256):
-    """
-    Check if a time series has at least `min_length` consecutive daily points.
-    """
-    ts = df["timestamp"].sort_values()
-    diffs = ts.diff().dropna()
+def enforce_daily_frequency_store(df_store,date_col = "Date",store_col = "Store"):
+    g = df_store.copy()
+    g[date_col] = pd.to_datetime(g[date_col])
+    g = g.sort_values(date_col)
 
-    # identify breaks
-    breaks = diffs != pd.Timedelta(days=1)
+    full_idx = pd.date_range(g[date_col].min(), g[date_col].max(), freq="D")
+    g = g.set_index(date_col).reindex(full_idx)
+    g.index.name = date_col
+    g = g.reset_index()
 
-    if not breaks.any():
-        return len(ts) >= min_length
+    store_id = df_store[store_col].iloc[0]
+    g[store_col] = store_id
 
-    # lengths of continuous segments
-    segment_lengths = breaks.cumsum().value_counts()
-    return segment_lengths.max() >= min_length
+    return g
+
+
+def has_continuous_history(df_store ,date_col = "Date",target_col = "Sales", min_len = 256):
+    g = df_store.copy()
+    g[date_col] = pd.to_datetime(g[date_col])
+    g = g.sort_values(date_col)
+
+    observed = g[target_col].notna()
+
+    if observed.sum() < min_len:
+        return False
+
+    d = g.loc[observed, date_col].drop_duplicates().sort_values()
+    if len(d) == 0:
+        return False
+
+    diffs = d.diff().dt.days
+    segments = diffs.ne(1).cumsum()
+    max_run = d.groupby(segments).size().max()
+
+    return int(max_run) >= int(min_len)
+
+def has_continuous_tail(df_store ,date_col = "Date",target_col = "Sales",context_length = 256,horizon = 30):
+    g = df_store.copy()
+    g[date_col] = pd.to_datetime(g[date_col])
+    g = g.sort_values(date_col)
+
+    # prendiamo l'ultimo giorno disponibile come "fine"
+    end_date = g[date_col].max()
+    ctx_end = end_date - pd.Timedelta(days=horizon)
+    ctx_start = ctx_end - pd.Timedelta(days=context_length - 1)
+
+    window = g[(g[date_col] >= ctx_start) & (g[date_col] <= ctx_end)].copy()
+    if len(window) != context_length:
+        return False
+
+    # tutte le date consecutive e target osservato
+    window = window.sort_values(date_col)
+    diffs = window[date_col].diff().dt.days.iloc[1:]
+    if not (diffs == 1).all():
+        return False
+
+    return window[target_col].notna().all()
+
 
 
 def load_raw_data(train_path, store_path, store_id=None):

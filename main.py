@@ -12,6 +12,8 @@ from src.data.make_dataset import (
     to_chronos_df,
     temporal_split,
     save_processed,
+    enforce_daily_frequency_store,
+    has_continuous_recent_window,
 )
 from src.models.predict_model import (
     load_model,
@@ -36,11 +38,15 @@ if __name__ == "__main__":
     train_path = os.path.join(base, "src/data/train.csv")
     store_path = os.path.join(base, "src/data/store.csv")
 
-    # MULTISTORE CONFIG 
+    # MULTISTORE CONFIG
     STORES = []
 
     HORIZON = 30
     CONTEXT_LEN = 256
+
+    # Data regularity and eligibility checks
+    ENFORCE_DAILY_FREQUENCY = True  # reindex each store to a daily calendar
+    REQUIRE_RECENT_WINDOW = True    # require last (CONTEXT_LEN + HORIZON) days to be continuous and observed
 
     # DETERMINE STORE LIST 
     if len(STORES) == 0:
@@ -66,6 +72,10 @@ if __name__ == "__main__":
         print("[STEP] Loading raw data (single store)...")
         df = load_raw_data(train_path, store_path, store_id=STORE_ID)
 
+        if ENFORCE_DAILY_FREQUENCY:
+            print("[STEP] Enforcing daily frequency (calendar reindex)...")
+            df = enforce_daily_frequency_store(df, date_col="Date", store_col="Store")
+
         print("[STEP] Cleaning (keep closed days)...")
         df = clean_data(df, keep_closed_days=True)
 
@@ -77,6 +87,14 @@ if __name__ == "__main__":
 
         print("[STEP] Converting to Chronos dataframe format...")
         df = to_chronos_df(df)
+
+        if REQUIRE_RECENT_WINDOW:
+            needed = CONTEXT_LEN + HORIZON
+            if not has_continuous_recent_window(
+                df, window_length=needed, date_col="timestamp", target_col="target"
+            ):
+                print(f"[SKIP] Store {STORE_ID}: last {needed} days are not continuous daily data with observed targets")
+                continue
 
         print("[STEP] Selecting paper-style covariates...")
         df = select_important_features(df)
