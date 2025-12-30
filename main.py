@@ -51,15 +51,15 @@ if __name__ == "__main__":
     MIN_RUN = max(CONTEXT_LENGTHS) + HORIZON
 
     # Light defaults: skip heavy recomputation/robustness unless explicitly requested
-    RUN_ROBUSTNESS = False  # set True to produce robustness CSVs per store (expensive)
-    SKIP_EXISTING_PROCESSED = True
-    SKIP_EXISTING_FORECASTS = True
-    SKIP_EXISTING_ROBUSTNESS = True
+    RUN_ROBUSTNESS = True  # set True to produce robustness CSVs per store (expensive)
+    SKIP_EXISTING_PROCESSED = False
+    SKIP_EXISTING_FORECASTS = False
+    SKIP_EXISTING_ROBUSTNESS = False
 
     MIN_OBS = 600  # drop stores with fewer observed targets
     CHECK_RECENT_COVS = True  # drop stores with NaN covariates in recent window
-    ZERO_TAIL_MAX = 30  # max consecutive zeros allowed in recent window
-    ZERO_TAIL_SHARE = 0.4  # max share of zeros in recent window
+    ZERO_TAIL_MAX = 10  # tighter: max consecutive zeros allowed in recent window
+    ZERO_TAIL_SHARE = 0.2  # tighter: max share of zeros in recent window
 
     # Data regularity and eligibility checks
     ENFORCE_DAILY_FREQUENCY = True  # reindex each store to a daily calendar

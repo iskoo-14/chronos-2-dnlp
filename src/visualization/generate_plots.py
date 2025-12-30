@@ -12,7 +12,7 @@ os.makedirs(FIG, exist_ok=True)
 # CONFIG: limit per-store plots to a small sample to avoid thousands of images
 GENERATE_PER_STORE = True
 # If empty, fallback to the first 3 detected stores
-PLOT_SAMPLE_STORES = [1, 292, 876]
+PLOT_SAMPLE_STORES = [1, 650, 400, 312]
 
 # ------------------------------------------------------------
 # IO HELPERS
