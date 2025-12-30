@@ -5,6 +5,15 @@ import pandas as pd
 from src.models.predict_model import predict_df_covariates, save_quantiles_csv
 
 
+# ------------------------------------------------------------
+# LOGGING UTILS
+# ------------------------------------------------------------
+
+def _log(msg, verbose):
+    if verbose:
+        print(msg)
+
+
 
 # ------------------------------------------------------------
 # PATH UTILS 
@@ -82,6 +91,18 @@ def _prepare_cov_frames(
     context_cov = context_df[ctx_cols].copy()
     future_cov = future_df[fut_cols].copy()
 
+    # align dtypes between context and future for shared columns (Chronos requires matching types)
+    for col in fut_cols:
+        if col in context_cov.columns and col in future_cov.columns:
+            if pd.api.types.is_datetime64_any_dtype(context_cov[col]):
+                # keep datetime as-is
+                continue
+            try:
+                future_cov[col] = future_cov[col].astype(context_cov[col].dtype, copy=False)
+            except Exception:
+                # fallback: leave as-is if casting fails
+                pass
+
     return context_cov, future_cov
 
 
@@ -92,7 +113,7 @@ def _prepare_cov_frames(
 def _run_predict_df(model, context_df, future_df, horizon, out_name):
     pred = predict_df_covariates(model, context_df, future_df, horizon=horizon)
     out_path = os.path.join(_ensure_outputs_dir(), out_name)
-    save_quantiles_csv(pred, out_path)
+    save_quantiles_csv(pred, out_path, verbose=False)
     return pred
 
 
@@ -100,8 +121,8 @@ def _run_predict_df(model, context_df, future_df, horizon, out_name):
 # ROBUSTNESS TESTS 
 # ------------------------------------------------------------
 
-def noise_test(model, df, horizon=30, seed=0, suffix=""):
-    print("[ROBUSTNESS] Noise test: add random covariate")
+def noise_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Noise test: add random covariate", verbose)
     np.random.seed(seed)
 
     ctx, fut = _make_context_future(df, horizon=horizon)
@@ -124,8 +145,8 @@ def noise_test(model, df, horizon=30, seed=0, suffix=""):
     )
 
 
-def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix=""):
-    print("[ROBUSTNESS] Strong noise: add Gaussian noise to covariates")
+def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Strong noise: add Gaussian noise to covariates", verbose)
     np.random.seed(seed)
 
     ctx, fut = _make_context_future(df, horizon=horizon)
@@ -150,8 +171,8 @@ def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix=""):
     )
 
 
-def shuffle_test(model, df, horizon=30, seed=0, suffix=""):
-    print("[ROBUSTNESS] Shuffle test: shuffle Promo to break temporal correlation")
+def shuffle_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Shuffle test: shuffle Promo to break temporal correlation", verbose)
     np.random.seed(seed)
 
     ctx, fut = _make_context_future(df, horizon=horizon)
@@ -176,8 +197,8 @@ def shuffle_test(model, df, horizon=30, seed=0, suffix=""):
     )
 
 
-def missing_future_test(model, df, horizon=30, suffix=""):
-    print("[ROBUSTNESS] Missing future: mask future SchoolHoliday")
+def missing_future_test(model, df, horizon=30, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Missing future: mask future SchoolHoliday", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -194,8 +215,8 @@ def missing_future_test(model, df, horizon=30, suffix=""):
     )
 
 
-def time_shift_test(model, df, horizon=30, shift=7, suffix=""):
-    print("[ROBUSTNESS] Time shift: shift Promo forward/backward")
+def time_shift_test(model, df, horizon=30, shift=7, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Time shift: shift Promo forward/backward", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -218,8 +239,8 @@ def time_shift_test(model, df, horizon=30, shift=7, suffix=""):
     )
 
 
-def trend_break_test(model, df, horizon=30, jump=1.0, suffix=""):
-    print("[ROBUSTNESS] Trend break: structural change in Promo")
+def trend_break_test(model, df, horizon=30, jump=1.0, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Trend break: structural change in Promo", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -237,8 +258,8 @@ def trend_break_test(model, df, horizon=30, jump=1.0, suffix=""):
     )
 
 
-def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix=""):
-    print(f"[ROBUSTNESS] Feature drop: remove '{drop_feature}' from covariates")
+def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix="", verbose=True):
+    _log(f"[ROBUSTNESS] Feature drop: remove '{drop_feature}' from covariates", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -258,8 +279,8 @@ def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix=""):
     )
 
 
-def partial_mask_test(model, df, horizon=30, frac=0.3, suffix=""):
-    print("[ROBUSTNESS] Partial mask: mask last portion of Promo history")
+def partial_mask_test(model, df, horizon=30, frac=0.3, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Partial mask: mask last portion of Promo history", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -278,8 +299,8 @@ def partial_mask_test(model, df, horizon=30, frac=0.3, suffix=""):
     )
 
 
-def scaling_test(model, df, horizon=30, scale=10.0, suffix=""):
-    print("[ROBUSTNESS] Scaling: rescale covariates")
+def scaling_test(model, df, horizon=30, scale=10.0, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Scaling: rescale covariates", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -301,8 +322,8 @@ def scaling_test(model, df, horizon=30, scale=10.0, suffix=""):
     )
 
 
-def long_horizon_test(model, df, horizon=90, suffix=""):
-    print("[ROBUSTNESS] Long horizon: descriptive stability test (90 steps)")
+def long_horizon_test(model, df, horizon=90, suffix="", verbose=True):
+    _log("[ROBUSTNESS] Long horizon: descriptive stability test (90 steps)", verbose)
     ctx, fut = _make_context_future(df, horizon=horizon)
     past_only, future_covs = _base_covariates()
 
@@ -320,16 +341,16 @@ def long_horizon_test(model, df, horizon=90, suffix=""):
 # MULTISTORE RUNNER 
 # ------------------------------------------------------------
 
-def run_all_robustness_tests(model, df, store_id=None):
+def run_all_robustness_tests(model, df, store_id=None, verbose=False):
     suffix = "" if store_id is None else f"_store_{store_id}"
 
-    noise_test(model, df, suffix=suffix)
-    strong_noise_test(model, df, suffix=suffix)
-    shuffle_test(model, df, suffix=suffix)
-    missing_future_test(model, df, suffix=suffix)
-    time_shift_test(model, df, suffix=suffix)
-    trend_break_test(model, df, suffix=suffix)
-    feature_drop_test(model, df, suffix=suffix)
-    partial_mask_test(model, df, suffix=suffix)
-    scaling_test(model, df, suffix=suffix)
-    long_horizon_test(model, df, suffix=suffix)
+    noise_test(model, df, suffix=suffix, verbose=verbose)
+    strong_noise_test(model, df, suffix=suffix, verbose=verbose)
+    shuffle_test(model, df, suffix=suffix, verbose=verbose)
+    missing_future_test(model, df, suffix=suffix, verbose=verbose)
+    time_shift_test(model, df, suffix=suffix, verbose=verbose)
+    trend_break_test(model, df, suffix=suffix, verbose=verbose)
+    feature_drop_test(model, df, suffix=suffix, verbose=verbose)
+    partial_mask_test(model, df, suffix=suffix, verbose=verbose)
+    scaling_test(model, df, suffix=suffix, verbose=verbose)
+    long_horizon_test(model, df, suffix=suffix, verbose=verbose)

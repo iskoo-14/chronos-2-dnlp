@@ -52,8 +52,9 @@ def pred_df_to_quantiles(pred_df):
     raise ValueError(f"Unexpected prediction df columns: {list(pred_df.columns)}")
 
 
-def save_quantiles_csv(pred_df, out_path):
+def save_quantiles_csv(pred_df, out_path, verbose=True):
     p10, med, p90 = pred_df_to_quantiles(pred_df)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     pd.DataFrame({"p10": p10, "median": med, "p90": p90}).to_csv(out_path, index=False)
-    print(f"[INFO] Saved forecast: {out_path}")
+    if verbose:
+        print(f"[INFO] Saved forecast: {out_path}")

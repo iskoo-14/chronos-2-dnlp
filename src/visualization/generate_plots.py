@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 OUT = "outputs"
 FIG = os.path.join(OUT, "figures")
@@ -13,10 +14,11 @@ os.makedirs(FIG, exist_ok=True)
 # IO HELPERS
 # ------------------------------------------------------------
 
-def load(base_dir, name):
+def load(base_dir, name, warn=True):
     path = os.path.join(base_dir, name)
     if not os.path.exists(path):
-        print(f"[WARN] Missing {name} in {base_dir}")
+        if warn:
+            print(f"[WARN] Missing {name} in {base_dir}")
         return None
     df = pd.read_csv(path)
     return df if not df.empty else None
@@ -52,7 +54,6 @@ def plot_forecast(df, title, fname, color="#1f77b4"):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
@@ -78,7 +79,6 @@ def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 # ------------------------------------------------------------
@@ -153,7 +153,6 @@ def plot_comparison(base, test, l1, l2, title, fname):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 def plot_difference(base, test, title, fname):
@@ -173,7 +172,6 @@ def plot_difference(base, test, title, fname):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 def plot_pct_difference(base, test, title, fname):
@@ -193,7 +191,6 @@ def plot_pct_difference(base, test, title, fname):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 # ------------------------------------------------------------
@@ -212,7 +209,6 @@ def plot_uncertainty(df, title, fname):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_CTX, fname))
     plt.close()
-    print(f"Saved plot: {fname}")
 
 
 # ------------------------------------------------------------
@@ -267,16 +263,16 @@ def _load_full_series(store_id):
 
 def _load_robustness_outputs(suffix):
     return {
-        "noise": load(OUT, f"noise_output{suffix}.csv"),
-        "strong_noise": load(OUT, f"strong_noise_output{suffix}.csv"),
-        "shuffle": load(OUT, f"shuffle_output{suffix}.csv"),
-        "missing": load(OUT, f"missing_future_output{suffix}.csv"),
-        "time_shift": load(OUT, f"time_shift_output{suffix}.csv"),
-        "trend_break": load(OUT, f"trend_break_output{suffix}.csv"),
-        "feature_drop": load(OUT, f"feature_drop_output{suffix}.csv"),
-        "partial_mask": load(OUT, f"partial_mask_output{suffix}.csv"),
-        "scaling": load(OUT, f"scaling_output{suffix}.csv"),
-        "long_horizon": load(OUT, f"long_horizon_output{suffix}.csv"),
+        "noise": load(OUT, f"noise_output{suffix}.csv", warn=False),
+        "strong_noise": load(OUT, f"strong_noise_output{suffix}.csv", warn=False),
+        "shuffle": load(OUT, f"shuffle_output{suffix}.csv", warn=False),
+        "missing": load(OUT, f"missing_future_output{suffix}.csv", warn=False),
+        "time_shift": load(OUT, f"time_shift_output{suffix}.csv", warn=False),
+        "trend_break": load(OUT, f"trend_break_output{suffix}.csv", warn=False),
+        "feature_drop": load(OUT, f"feature_drop_output{suffix}.csv", warn=False),
+        "partial_mask": load(OUT, f"partial_mask_output{suffix}.csv", warn=False),
+        "scaling": load(OUT, f"scaling_output{suffix}.csv", warn=False),
+        "long_horizon": load(OUT, f"long_horizon_output{suffix}.csv", warn=False),
     }
 
 
@@ -287,29 +283,22 @@ def _load_robustness_outputs(suffix):
 if __name__ == "__main__":
 
     context_dirs = _list_context_dirs()
-    print(f"[INFO] Found {len(context_dirs)} context folder(s)")
-
     for ctx_len, ctx_dir in context_dirs:
         ctx_label = "baseline" if ctx_len is None else f"ctx_{ctx_len}"
         fig_dir = os.path.join(FIG, ctx_label)
         set_fig_dir(fig_dir)
 
         store_ids = _detect_stores(ctx_dir)
-        print(f"[INFO] [{ctx_label}] Generating plots for {len(store_ids)} store(s)")
-
-        for store_id in store_ids:
+        for store_id in tqdm(store_ids, desc=f"{ctx_label} plots", unit="store"):
 
             suffix = "" if store_id is None else f"_store_{store_id}"
             tag = "" if store_id is None else f"_store_{store_id}"
-
-            print(f"[STORE {store_id if store_id is not None else 'single'} | {ctx_label}] Plotting")
 
             uni = load(ctx_dir, f"univariate{suffix}.csv")
             cov = load(ctx_dir, f"covariate{suffix}.csv")
             gt = load(ctx_dir, f"ground_truth{suffix}.csv")
 
             if uni is None or cov is None or gt is None:
-                print("[WARN] Missing baseline files, skipping store")
                 continue
 
             series_full = _load_full_series(store_id)
@@ -325,10 +314,7 @@ if __name__ == "__main__":
 
             robust = _load_robustness_outputs(suffix)
 
-            # ----------------------------------------------------
             # SINGLE FORECASTS
-            # ----------------------------------------------------
-
             plot_forecast(uni, "Univariate Forecast", f"{ctx_label}_univariate{tag}.png", "#7f7f7f")
             plot_forecast(cov, "Covariate Forecast", f"{ctx_label}_covariate{tag}.png", "#1f77b4")
 
@@ -339,10 +325,7 @@ if __name__ == "__main__":
                     f"{ctx_label}_long_horizon{tag}.png"
                 )
 
-            # ----------------------------------------------------
             # FORECAST VS TRUTH
-            # ----------------------------------------------------
-
             plot_forecast_vs_truth(
                 uni,
                 y_true,
@@ -376,10 +359,7 @@ if __name__ == "__main__":
                     f"{ctx_label}_case_study_univariate{tag}.png"
                 )
 
-            # ----------------------------------------------------
             # ROBUSTNESS COMPARISONS (root outputs)
-            # ----------------------------------------------------
-
             tests = [
                 (robust["noise"], "Noise", "noise"),
                 (robust["strong_noise"], "Strong Noise", "strong_noise"),
@@ -415,10 +395,7 @@ if __name__ == "__main__":
                     f"{ctx_label}_pct_{tag2}{tag}.png"
                 )
 
-            # ----------------------------------------------------
             # UNCERTAINTY
-            # ----------------------------------------------------
-
             plot_uncertainty(cov, "Uncertainty: Covariates", f"{ctx_label}_unc_cov{tag}.png")
 
             if robust["missing"] is not None:
@@ -434,5 +411,3 @@ if __name__ == "__main__":
                     "Uncertainty: Scaling",
                     f"{ctx_label}_unc_scaling{tag}.png"
                 )
-
-    print("[INFO] Plot generation completed.")

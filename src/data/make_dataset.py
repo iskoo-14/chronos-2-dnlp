@@ -318,10 +318,11 @@ def to_chronos_df(df):
     return out
 
 
-def save_processed(df, output_path):
+def save_processed(df, output_path, verbose=True):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df.to_csv(output_path, index=False)
-    print(f"[INFO] Processed dataset saved to {output_path}")
+    if verbose:
+        print(f"[INFO] Processed dataset saved to {output_path}")
 
 
 if __name__ == "__main__":

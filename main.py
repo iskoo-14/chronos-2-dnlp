@@ -2,6 +2,7 @@ import os
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import pandas as pd
+from tqdm import tqdm
 
 from src.data.make_dataset import (
     load_raw_data,
@@ -44,9 +45,12 @@ if __name__ == "__main__":
     STORES = []
 
     HORIZON = 30
-    CONTEXT_LENGTHS = [128, 256, 512]
+    CONTEXT_LENGTHS = [512]
     MIN_RUN = max(CONTEXT_LENGTHS) + HORIZON
-    RUN_ROBUSTNESS = False  # set True to produce robustness CSVs per store (expensive)
+    RUN_ROBUSTNESS = True  # set True to produce robustness CSVs per store (expensive)
+    SKIP_EXISTING_PROCESSED = True
+    SKIP_EXISTING_FORECASTS = True
+    SKIP_EXISTING_ROBUSTNESS = True
 
     # Data regularity and eligibility checks
     ENFORCE_DAILY_FREQUENCY = True  # reindex each store to a daily calendar
@@ -112,20 +116,28 @@ if __name__ == "__main__":
     # cache processed dfs per store to avoid re-running preprocessing across context ablations
     processed_by_store = {}
 
-    for STORE_ID in store_list:
+    print("[STEP] Preprocessing stores (clean + features)...")
+    for STORE_ID in tqdm(store_list, desc="Preprocess stores", unit="store"):
         store_df = df_all_filtered[df_all_filtered["Store"] == STORE_ID].copy()
 
-        print("\n---------------------------------------------------")
-        print(f"[STORE {STORE_ID}] Preprocessing base dataframe")
-        print("---------------------------------------------------")
+        processed_path = os.path.join(
+            base, "src/data", f"processed_rossmann_store_{STORE_ID}.csv"
+        )
+        if SKIP_EXISTING_PROCESSED and os.path.exists(processed_path):
+            store_df = pd.read_csv(processed_path)
+            # ensure recent window continuity if required
+            if REQUIRE_RECENT_WINDOW and not has_continuous_recent_window(
+                store_df, window_length=MIN_RUN, date_col="timestamp", target_col="target"
+            ):
+                tqdm.write(
+                    f"[SKIP] Store {STORE_ID}: existing processed file fails recent continuity check"
+                )
+                continue
+            processed_by_store[STORE_ID] = store_df
+            continue
 
-        print("[STEP] Cleaning (keep closed days)...")
         store_df = clean_data(store_df, keep_closed_days=True)
-
-        print("[STEP] Adding time features...")
         store_df = add_time_features(store_df)
-
-        print("[STEP] Converting to Chronos dataframe format...")
         store_df = to_chronos_df(store_df)
 
         if REQUIRE_RECENT_WINDOW:
@@ -133,27 +145,41 @@ if __name__ == "__main__":
             if not has_continuous_recent_window(
                 store_df, window_length=needed, date_col="timestamp", target_col="target"
             ):
-                print(
+                tqdm.write(
                     f"[SKIP] Store {STORE_ID}: last {needed} days are not continuous daily data with observed targets"
                 )
                 continue
 
-        print("[STEP] Selecting paper-style covariates...")
         store_df = select_important_features(store_df)
-
-        print("[STEP] Fixing mixed types...")
         store_df = fix_mixed_types(store_df)
 
-        processed_path = os.path.join(
-            base, "src/data", f"processed_rossmann_store_{STORE_ID}.csv"
-        )
-        save_processed(store_df, processed_path)
+        save_processed(store_df, processed_path, verbose=False)
 
         processed_by_store[STORE_ID] = store_df
 
         if RUN_ROBUSTNESS:
-            print("[STEP] Running robustness suite for store...")
-            run_all_robustness_tests(pipeline, store_df, store_id=STORE_ID)
+            robustness_files = [
+                f"{name}_output_store_{STORE_ID}.csv"
+                for name in [
+                    "noise",
+                    "strong_noise",
+                    "shuffle",
+                    "missing_future",
+                    "time_shift",
+                    "trend_break",
+                    "feature_drop",
+                    "partial_mask",
+                    "scaling",
+                    "long_horizon",
+                ]
+            ]
+            root_out = output_dir
+            if SKIP_EXISTING_ROBUSTNESS and all(
+                os.path.exists(os.path.join(root_out, fname))
+                for fname in robustness_files
+            ):
+                continue
+            run_all_robustness_tests(pipeline, store_df, store_id=STORE_ID, verbose=False)
 
     store_list = list(processed_by_store.keys())
     if len(store_list) == 0:
@@ -164,44 +190,41 @@ if __name__ == "__main__":
     for CONTEXT_LEN in CONTEXT_LENGTHS:
         ctx_output_dir = os.path.join(output_dir, f"ctx_{CONTEXT_LEN}")
         ensure_output_folder(ctx_output_dir)
-        print(f"\n[CTX {CONTEXT_LEN}] Starting forecasts for {len(store_list)} store(s)")
+        print(f"[CTX {CONTEXT_LEN}] Forecasts for {len(store_list)} store(s)")
 
-        for STORE_ID in store_list:
-
-            print("\n---------------------------------------------------")
-            print(f"[STORE {STORE_ID} | CTX {CONTEXT_LEN}] Starting pipeline")
-            print("---------------------------------------------------")
+        for STORE_ID in tqdm(store_list, desc=f"CTX {CONTEXT_LEN} forecasts", unit="store"):
 
             df = processed_by_store[STORE_ID]
 
-            print("[STEP] Temporal split: last 30 days as ground truth...")
             df_past, df_test = temporal_split(df, test_size=HORIZON)
-
-            print(f"[INFO] Past length: {len(df_past)} | Test length: {len(df_test)}")
 
             if len(df_past) > CONTEXT_LEN:
                 df_past = df_past.iloc[-CONTEXT_LEN:].reset_index(drop=True)
-                print(f"[INFO] Context truncated to last {CONTEXT_LEN} rows")
 
             gt_path = os.path.join(ctx_output_dir, f"ground_truth_store_{STORE_ID}.csv")
             pd.DataFrame({"y_true": df_test["target"].values}).to_csv(gt_path, index=False)
-            print(f"[INFO] Saved ground truth: {gt_path}")
 
             # covariates sets (paper-style)
             PAST_ONLY_COVS = ["Customers"]
             KNOWN_FUTURE_COVS = ["Open", "Promo", "SchoolHoliday", "StateHoliday", "DayOfWeek"]
 
-            # UNIVARIATE
-            print("[STEP] Running univariate forecast...")
+            uni_path = os.path.join(ctx_output_dir, f"univariate_store_{STORE_ID}.csv")
+            cov_path = os.path.join(ctx_output_dir, f"covariate_store_{STORE_ID}.csv")
+            gt_path = os.path.join(ctx_output_dir, f"ground_truth_store_{STORE_ID}.csv")
+
+            if SKIP_EXISTING_FORECASTS and all(
+                os.path.exists(p) for p in [uni_path, cov_path, gt_path]
+            ):
+                continue
+
             context_uni = df_past[["id", "timestamp", "target"]].copy()
             pred_uni = predict_df_univariate(pipeline, context_uni, horizon=HORIZON)
             save_quantiles_csv(
                 pred_uni,
-                os.path.join(ctx_output_dir, f"univariate_store_{STORE_ID}.csv"),
+                uni_path,
+                verbose=False,
             )
 
-            # COVARIATE (ICL) FORECAST
-            print("[STEP] Running covariate forecast (predict_df)...")
             context_cov = df_past[
                 ["id", "timestamp", "target"] + PAST_ONLY_COVS + KNOWN_FUTURE_COVS
             ].copy()
@@ -212,10 +235,9 @@ if __name__ == "__main__":
             )
             save_quantiles_csv(
                 pred_cov,
-                os.path.join(ctx_output_dir, f"covariate_store_{STORE_ID}.csv"),
+                cov_path,
+                verbose=False,
             )
-
-            print(f"[STORE {STORE_ID} | CTX {CONTEXT_LEN}] Completed")
 
         # BACKWARD COMPATIBILITY (SINGLE STORE)
         if len(store_list) == 1:
