@@ -9,6 +9,10 @@ FIG = os.path.join(OUT, "figures")
 FIG_CTX = FIG  # updated per context
 os.makedirs(FIG, exist_ok=True)
 
+# CONFIG: limit per-store plots to a small sample to avoid thousands of images
+GENERATE_PER_STORE = True
+# If empty, fallback to the first 3 detected stores
+PLOT_SAMPLE_STORES = [1, 292, 876]
 
 # ------------------------------------------------------------
 # IO HELPERS
@@ -289,7 +293,23 @@ if __name__ == "__main__":
         set_fig_dir(fig_dir)
 
         store_ids = _detect_stores(ctx_dir)
-        for store_id in tqdm(store_ids, desc=f"{ctx_label} plots", unit="store"):
+        if not store_ids:
+            continue
+
+        # pick sample subset
+        if PLOT_SAMPLE_STORES:
+            sample_set = [str(s) for s in PLOT_SAMPLE_STORES]
+            store_ids_subset = [s for s in store_ids if s is None or str(s) in sample_set]
+            if len(store_ids_subset) == 0:
+                # fallback to first 3 detected if requested ids not present
+                store_ids_subset = store_ids[:3]
+        else:
+            store_ids_subset = store_ids[:3]
+
+        if not GENERATE_PER_STORE:
+            continue
+
+        for store_id in tqdm(store_ids_subset, desc=f"{ctx_label} plots (sampled)", unit="store"):
 
             suffix = "" if store_id is None else f"_store_{store_id}"
             tag = "" if store_id is None else f"_store_{store_id}"

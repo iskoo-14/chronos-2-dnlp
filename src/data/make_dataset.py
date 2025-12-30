@@ -160,10 +160,18 @@ def build_store_validity_report(
     target_col="Sales",
     min_run=256,
     recent_window_length=None,
+    min_obs=None,
+    min_mean_target=None,
+    covariate_cols=None,
+    check_recent_covariates=False,
+    zero_tail_max=None,
+    zero_tail_share=None,
 ):
     """Return per-store continuity stats and a validity flag."""
     if recent_window_length is None:
         recent_window_length = min_run
+    if covariate_cols is None:
+        covariate_cols = []
 
     records = []
     for store_id, g in df.groupby(store_col):
@@ -180,6 +188,8 @@ def build_store_validity_report(
         is_valid = True
         reasons = []
         recent_ok = True
+        cov_ok = True
+        zero_tail_ok = True
 
         if n_obs == 0:
             is_valid = False
@@ -188,6 +198,16 @@ def build_store_validity_report(
         if max_run < min_run:
             is_valid = False
             reasons.append(f"max_run<{min_run}")
+
+        if min_obs is not None and n_obs < min_obs:
+            is_valid = False
+            reasons.append(f"n_obs<{min_obs}")
+
+        if min_mean_target is not None:
+            mean_target = observed[target_col].mean()
+            if pd.isna(mean_target) or mean_target < min_mean_target:
+                is_valid = False
+                reasons.append(f"mean_target<{min_mean_target}")
 
         if recent_window_length is not None:
             recent_ok = has_continuous_recent_window(
@@ -200,6 +220,48 @@ def build_store_validity_report(
                 is_valid = False
                 reasons.append("recent_gap")
 
+        if check_recent_covariates and covariate_cols:
+            end_date_cov = g[date_col].max()
+            start_date_cov = end_date_cov - pd.Timedelta(days=recent_window_length - 1)
+            expected_range_cov = pd.date_range(start_date_cov, end_date_cov, freq="D")
+            g_recent_cov = (
+                g.drop_duplicates(subset=date_col)
+                .set_index(date_col)
+                .reindex(expected_range_cov)
+            )
+            cov_na = g_recent_cov[covariate_cols].isna().any(axis=1).any()
+            cov_ok = not cov_na
+            if cov_na:
+                is_valid = False
+                reasons.append("recent_cov_na")
+
+        # Zero-tail checks in the recent window
+        if (zero_tail_max is not None or zero_tail_share is not None) and recent_window_length is not None:
+            end_date_tail = g[date_col].max()
+            start_date_tail = end_date_tail - pd.Timedelta(days=recent_window_length - 1)
+            expected_range_tail = pd.date_range(start_date_tail, end_date_tail, freq="D")
+            g_recent_tail = (
+                g.drop_duplicates(subset=date_col)
+                .set_index(date_col)
+                .reindex(expected_range_tail)
+            )
+            tail_vals = g_recent_tail[target_col]
+            zeros = tail_vals == 0
+            if zero_tail_max is not None:
+                # longest consecutive run of zeros
+                segments = zeros.ne(zeros.shift()).cumsum()
+                max_zero_run = zeros.groupby(segments).sum().max() or 0
+                if int(max_zero_run) > zero_tail_max:
+                    zero_tail_ok = False
+                    is_valid = False
+                    reasons.append(f"zero_tail_run>{zero_tail_max}")
+            if zero_tail_share is not None:
+                share = zeros.mean()
+                if share > zero_tail_share:
+                    zero_tail_ok = False
+                    is_valid = False
+                    reasons.append(f"zero_tail_share>{zero_tail_share}")
+
         records.append(
             {
                 "store_id": store_id,
@@ -208,6 +270,8 @@ def build_store_validity_report(
                 "end_date": end_date,
                 "max_consecutive_daily_run": max_run,
                 "recent_window_ok": bool(recent_ok),
+                "recent_cov_ok": bool(cov_ok),
+                "zero_tail_ok": bool(zero_tail_ok),
                 "is_valid": bool(is_valid),
                 "reasons": ";".join(reasons) if reasons else "",
             }
@@ -223,6 +287,12 @@ def filter_valid_stores(
     target_col="Sales",
     min_run=256,
     recent_window_length=None,
+    min_obs=None,
+    min_mean_target=None,
+    covariate_cols=None,
+    check_recent_covariates=False,
+    zero_tail_max=None,
+    zero_tail_share=None,
 ):
     """Filter dataframe to valid stores and return df, report, and id list."""
     report_df = build_store_validity_report(
@@ -232,6 +302,12 @@ def filter_valid_stores(
         target_col=target_col,
         min_run=min_run,
         recent_window_length=recent_window_length,
+        min_obs=min_obs,
+        min_mean_target=min_mean_target,
+        covariate_cols=covariate_cols,
+        check_recent_covariates=check_recent_covariates,
+        zero_tail_max=zero_tail_max,
+        zero_tail_share=zero_tail_share,
     )
     valid_ids = report_df.loc[report_df["is_valid"], "store_id"].tolist()
     df_filtered = df[df[store_col].isin(valid_ids)].copy()

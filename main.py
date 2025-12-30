@@ -41,16 +41,25 @@ if __name__ == "__main__":
     train_path = os.path.join(base, "src/data/train.csv")
     store_path = os.path.join(base, "src/data/store.csv")
 
-    # MULTISTORE CONFIG
-    STORES = []
-
+    # MULTISTORE CONFIG (lightweight by default; flip flags for full ablation/robustness)
+    STORES = []  # empty = all valid stores
     HORIZON = 30
-    CONTEXT_LENGTHS = [128, 256, 512]
+
+    BEST_CONTEXT = 512
+    RUN_ALL_CONTEXTS = False  # set True to run [128, 256, 512] ablation
+    CONTEXT_LENGTHS = [128, 256, 512] if RUN_ALL_CONTEXTS else [BEST_CONTEXT]
     MIN_RUN = max(CONTEXT_LENGTHS) + HORIZON
-    RUN_ROBUSTNESS = True  # set True to produce robustness CSVs per store (expensive)
-    SKIP_EXISTING_PROCESSED = False
-    SKIP_EXISTING_FORECASTS = False
-    SKIP_EXISTING_ROBUSTNESS = False
+
+    # Light defaults: skip heavy recomputation/robustness unless explicitly requested
+    RUN_ROBUSTNESS = False  # set True to produce robustness CSVs per store (expensive)
+    SKIP_EXISTING_PROCESSED = True
+    SKIP_EXISTING_FORECASTS = True
+    SKIP_EXISTING_ROBUSTNESS = True
+
+    MIN_OBS = 600  # drop stores with fewer observed targets
+    CHECK_RECENT_COVS = True  # drop stores with NaN covariates in recent window
+    ZERO_TAIL_MAX = 30  # max consecutive zeros allowed in recent window
+    ZERO_TAIL_SHARE = 0.4  # max share of zeros in recent window
 
     # Data regularity and eligibility checks
     ENFORCE_DAILY_FREQUENCY = True  # reindex each store to a daily calendar
@@ -80,6 +89,11 @@ if __name__ == "__main__":
         target_col="Sales",
         min_run=MIN_RUN,
         recent_window_length=MIN_RUN if REQUIRE_RECENT_WINDOW else None,
+        min_obs=MIN_OBS,
+        covariate_cols=["Open", "Promo", "SchoolHoliday", "StateHoliday", "Customers", "DayOfWeek"],
+        check_recent_covariates=CHECK_RECENT_COVS,
+        zero_tail_max=ZERO_TAIL_MAX,
+        zero_tail_share=ZERO_TAIL_SHARE,
     )
 
     report_path = os.path.join(reports_dir, "store_validity.csv")
@@ -139,16 +153,6 @@ if __name__ == "__main__":
         store_df = clean_data(store_df, keep_closed_days=True)
         store_df = add_time_features(store_df)
         store_df = to_chronos_df(store_df)
-
-        if REQUIRE_RECENT_WINDOW:
-            needed = MIN_RUN
-            if not has_continuous_recent_window(
-                store_df, window_length=needed, date_col="timestamp", target_col="target"
-            ):
-                tqdm.write(
-                    f"[SKIP] Store {STORE_ID}: last {needed} days are not continuous daily data with observed targets"
-                )
-                continue
 
         store_df = select_important_features(store_df)
         store_df = fix_mixed_types(store_df)

@@ -15,5 +15,6 @@ echo ------------------------------------------------------------
 echo [DONE] Evaluation complete.
 echo Files generated:
 echo   - outputs\comparison_report.txt
+echo   - reports/*.csv
 echo ------------------------------------------------------------
 exit /b

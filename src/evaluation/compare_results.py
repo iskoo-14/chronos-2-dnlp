@@ -318,13 +318,6 @@ if __name__ == "__main__":
     if summary_path:
         text_report.append(f"[INFO] WQL summary saved to {summary_path}")
 
-    # Filtered summaries (drop outliers above OUTLIER_THRESHOLD)
-    filt_summary_path, filt_by_ctx_path = summarize_wql_filtered(df_wql, threshold=OUTLIER_THRESHOLD)
-    if filt_summary_path:
-        text_report.append(f"[INFO] WQL summary (filtered <= {OUTLIER_THRESHOLD}) saved to {filt_summary_path}")
-    if filt_by_ctx_path:
-        text_report.append(f"[INFO] WQL by context (filtered <= {OUTLIER_THRESHOLD}) saved to {filt_by_ctx_path}")
-
     if robustness_paths and robustness_paths[0]:
         text_report.append(f"[INFO] Robustness merged saved to {robustness_paths[0]}")
     if robustness_paths and robustness_paths[1]:
