@@ -9,7 +9,7 @@ os.makedirs(FIG, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# LOAD
+# LOAD (IDENTICO)
 # ------------------------------------------------------------
 
 def load(name):
@@ -22,7 +22,7 @@ def load(name):
 
 
 # ------------------------------------------------------------
-# BASIC PLOTS
+# BASIC PLOTS 
 # ------------------------------------------------------------
 
 def plot_forecast(df, title, fname, color="#1f77b4"):
@@ -75,7 +75,7 @@ def plot_forecast_vs_truth(df_pred, y_true, title, fname, color="#1f77b4"):
 
 
 # ------------------------------------------------------------
-# COMPARISON PLOTS (ONLY IF SAME HORIZON)
+# COMPARISON PLOTS 
 # ------------------------------------------------------------
 
 def plot_case_study(
@@ -190,7 +190,7 @@ def plot_pct_difference(base, test, title, fname):
 
 
 # ------------------------------------------------------------
-# UNCERTAINTY
+# UNCERTAINTY 
 # ------------------------------------------------------------
 
 def plot_uncertainty(df, title, fname):
@@ -209,131 +209,175 @@ def plot_uncertainty(df, title, fname):
 
 
 # ------------------------------------------------------------
-# MAIN
+# MAIN 
 # ------------------------------------------------------------
 
 if __name__ == "__main__":
 
-    uni = load("univariate.csv")
-    cov = load("covariate.csv")
-    gt = load("ground_truth.csv")
-
-    df_full = pd.read_csv("src/data/processed_rossmann_single.csv")
-    y_full = df_full["target"].values
-
-    H = len(gt) if gt is not None else 30
-    y_past = y_full[-(H + 60):-H]
-    y_future = y_full[-H:]
-    y_true = gt["y_true"].values if gt is not None else None
-
-    noise = load("noise_output.csv")
-    strong_noise = load("strong_noise_output.csv")
-    shuffle = load("shuffle_output.csv")
-    missing = load("missing_future_output.csv")
-    time_shift = load("time_shift_output.csv")
-    trend_break = load("trend_break_output.csv")
-    feature_drop = load("feature_drop_output.csv")
-    partial_mask = load("partial_mask_output.csv")
-    scaling = load("scaling_output.csv")
-    long_horizon = load("long_horizon_output.csv")
-
     # --------------------------------------------------------
-    # SINGLE FORECASTS
+    # DETECT STORES 
     # --------------------------------------------------------
 
-    if uni is not None:
-        plot_forecast(uni, "Univariate Forecast", "univariate.png", "#7f7f7f")
+    store_files = [
+        f for f in os.listdir(OUT)
+        if f.startswith("univariate_store_") and f.endswith(".csv")
+    ]
 
-    if cov is not None:
-        plot_forecast(cov, "Covariate Forecast", "covariate.png", "#1f77b4")
+    if len(store_files) == 0:
+        store_ids = [None]
+    else:
+        store_ids = [
+            f.replace("univariate_store_", "").replace(".csv", "")
+            for f in store_files
+        ]
 
-    if long_horizon is not None:
-        plot_forecast(long_horizon, "Long Horizon Forecast (90 steps)", "long_horizon.png")
+    print(f"[INFO] Generating plots for {len(store_ids)} store(s)")
 
     # --------------------------------------------------------
-    # FORECAST VS GROUND TRUTH (BASELINE ONLY)
+    # LOOP STORES
     # --------------------------------------------------------
 
-    if uni is not None and y_true is not None:
+    for store_id in store_ids:
+
+        suffix = "" if store_id is None else f"_store_{store_id}"
+        tag = "" if store_id is None else f"_store_{store_id}"
+
+        print(f"[STORE {store_id if store_id is not None else 'single'}] Plotting")
+
+        uni = load(f"univariate{suffix}.csv")
+        cov = load(f"covariate{suffix}.csv")
+        gt = load(f"ground_truth{suffix}.csv")
+
+        if uni is None or cov is None or gt is None:
+            print("[WARN] Missing baseline files, skipping store")
+            continue
+
+        df_full = pd.read_csv("src/data/processed_rossmann_single.csv")
+        y_full = df_full["target"].values
+
+        H = len(gt)
+        y_past = y_full[-(H + 60):-H]
+        y_future = y_full[-H:]
+        y_true = gt["y_true"].values
+
+        noise = load(f"noise_output{suffix}.csv")
+        strong_noise = load(f"strong_noise_output{suffix}.csv")
+        shuffle = load(f"shuffle_output{suffix}.csv")
+        missing = load(f"missing_future_output{suffix}.csv")
+        time_shift = load(f"time_shift_output{suffix}.csv")
+        trend_break = load(f"trend_break_output{suffix}.csv")
+        feature_drop = load(f"feature_drop_output{suffix}.csv")
+        partial_mask = load(f"partial_mask_output{suffix}.csv")
+        scaling = load(f"scaling_output{suffix}.csv")
+        long_horizon = load(f"long_horizon_output{suffix}.csv")
+
+        # ----------------------------------------------------
+        # SINGLE FORECASTS
+        # ----------------------------------------------------
+
+        plot_forecast(uni, "Univariate Forecast", f"univariate{tag}.png", "#7f7f7f")
+        plot_forecast(cov, "Covariate Forecast", f"covariate{tag}.png", "#1f77b4")
+
+        if long_horizon is not None:
+            plot_forecast(
+                long_horizon,
+                "Long Horizon Forecast (90 steps)",
+                f"long_horizon{tag}.png"
+            )
+
+        # ----------------------------------------------------
+        # FORECAST VS TRUTH
+        # ----------------------------------------------------
+
         plot_forecast_vs_truth(
             uni,
             y_true,
             "Univariate Forecast vs Ground Truth",
-            "univariate_vs_truth.png",
-            color="#7f7f7f"
+            f"univariate_vs_truth{tag}.png",
+            "#7f7f7f"
         )
 
-    if cov is not None and y_true is not None:
         plot_forecast_vs_truth(
             cov,
             y_true,
             "Covariate Forecast vs Ground Truth",
-            "covariate_vs_truth.png",
-            color="#1f77b4"
+            f"covariate_vs_truth{tag}.png",
+            "#1f77b4"
         )
 
-    if cov is not None and y_past is not None and y_future is not None:
         plot_case_study(
             y_past,
             y_future,
             cov,
             "Case Study: Covariates vs Ground Truth",
-            "case_study_covariates.png"
+            f"case_study_covariates{tag}.png"
         )
 
-    if uni is not None and y_past is not None and y_future is not None:
         plot_case_study(
             y_past,
             y_future,
             uni,
             "Case Study: Univariate vs Ground Truth",
-            "case_study_univariate.png"
+            f"case_study_univariate{tag}.png"
         )
 
-    # --------------------------------------------------------
-    # ROBUSTNESS COMPARISONS
-    # --------------------------------------------------------
+        # ----------------------------------------------------
+        # ROBUSTNESS COMPARISONS
+        # ----------------------------------------------------
 
-    tests = [
-        (noise, "Noise", "noise"),
-        (strong_noise, "Strong Noise", "strong_noise"),
-        (shuffle, "Shuffle", "shuffle"),
-        (missing, "Missing Future", "missing"),
-        (time_shift, "Time Shift", "time_shift"),
-        (trend_break, "Trend Break", "trend_break"),
-        (feature_drop, "Feature Drop", "feature_drop"),
-        (partial_mask, "Partial Mask", "partial_mask"),
-        (scaling, "Scaling", "scaling"),
-    ]
+        tests = [
+            (noise, "Noise", "noise"),
+            (strong_noise, "Strong Noise", "strong_noise"),
+            (shuffle, "Shuffle", "shuffle"),
+            (missing, "Missing Future", "missing"),
+            (time_shift, "Time Shift", "time_shift"),
+            (trend_break, "Trend Break", "trend_break"),
+            (feature_drop, "Feature Drop", "feature_drop"),
+            (partial_mask, "Partial Mask", "partial_mask"),
+            (scaling, "Scaling", "scaling"),
+        ]
 
-    for df_test, label, tag in tests:
-        if cov is not None and df_test is not None:
+        for df_test, label, tag2 in tests:
+            if df_test is None:
+                continue
+
             plot_comparison(
                 cov, df_test,
                 "Covariates", label,
                 f"Covariates vs {label}",
-                f"cov_vs_{tag}.png"
+                f"cov_vs_{tag2}{tag}.png"
             )
+
             plot_difference(
                 cov, df_test,
                 f"Difference: {label} vs Covariates",
-                f"diff_{tag}.png"
+                f"diff_{tag2}{tag}.png"
             )
+
             plot_pct_difference(
                 cov, df_test,
                 f"Percent Difference: {label} vs Covariates",
-                f"pct_{tag}.png"
+                f"pct_{tag2}{tag}.png"
             )
 
-    # --------------------------------------------------------
-    # UNCERTAINTY
-    # --------------------------------------------------------
+        # ----------------------------------------------------
+        # UNCERTAINTY
+        # ----------------------------------------------------
 
-    if cov is not None:
-        plot_uncertainty(cov, "Uncertainty: Covariates", "unc_cov.png")
+        plot_uncertainty(cov, "Uncertainty: Covariates", f"unc_cov{tag}.png")
 
-    if missing is not None:
-        plot_uncertainty(missing, "Uncertainty: Missing Future", "unc_missing.png")
+        if missing is not None:
+            plot_uncertainty(
+                missing,
+                "Uncertainty: Missing Future",
+                f"unc_missing{tag}.png"
+            )
 
-    if scaling is not None:
-        plot_uncertainty(scaling, "Uncertainty: Scaling", "unc_scaling.png")
+        if scaling is not None:
+            plot_uncertainty(
+                scaling,
+                "Uncertainty: Scaling",
+                f"unc_scaling{tag}.png"
+            )
+
+    print("[INFO] Plot generation completed.")

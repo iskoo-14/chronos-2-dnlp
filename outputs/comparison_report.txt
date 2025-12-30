@@ -1,0 +1,180 @@
+=== DNLP FORECAST COMPARISON REPORT (MULTISTORE) ===
+
+> Store 1
+>> Covariates vs Univariate (relative)
+MAE: 386.0150
+RMSE: 475.9027
+PercentDifference: 268.3895
+Interval_Univariate: 2415.7327
+Interval_Covariates: 1002.7999
+
+>> Univariate vs Ground Truth
+WQL: 0.0803
+
+>> Covariates vs Ground Truth
+WQL: 0.0529
+
+> Store 10
+>> Covariates vs Univariate (relative)
+MAE: 423.9304
+RMSE: 496.6410
+PercentDifference: 26.2420
+Interval_Univariate: 4216.3918
+Interval_Covariates: 2130.8103
+
+>> Univariate vs Ground Truth
+WQL: 0.0897
+
+>> Covariates vs Ground Truth
+WQL: 0.0572
+
+> Store 11
+>> Covariates vs Univariate (relative)
+MAE: 630.4147
+RMSE: 827.5323
+PercentDifference: 36.5554
+Interval_Univariate: 4048.1365
+Interval_Covariates: 1965.3768
+
+>> Univariate vs Ground Truth
+WQL: 0.0968
+
+>> Covariates vs Ground Truth
+WQL: 0.0690
+
+> Store 12
+>> Covariates vs Univariate (relative)
+MAE: 1075.9665
+RMSE: 1271.8352
+PercentDifference: 27.1127
+Interval_Univariate: 6015.1044
+Interval_Covariates: 2418.3550
+
+>> Univariate vs Ground Truth
+WQL: 0.1156
+
+>> Covariates vs Ground Truth
+WQL: 0.0767
+
+> Store 2
+>> Covariates vs Univariate (relative)
+MAE: 709.1270
+RMSE: 813.7786
+PercentDifference: 14.9860
+Interval_Univariate: 3628.3415
+Interval_Covariates: 1639.9834
+
+>> Univariate vs Ground Truth
+WQL: 0.1029
+
+>> Covariates vs Ground Truth
+WQL: 0.0805
+
+> Store 3
+>> Covariates vs Univariate (relative)
+MAE: 1558.4620
+RMSE: 2253.0600
+PercentDifference: 172.8207
+Interval_Univariate: 6529.3097
+Interval_Covariates: 2886.1744
+
+>> Univariate vs Ground Truth
+WQL: 0.1445
+
+>> Covariates vs Ground Truth
+WQL: 0.0748
+
+> Store 4
+>> Covariates vs Univariate (relative)
+MAE: 612.3595
+RMSE: 997.0126
+PercentDifference: -82.3783
+Interval_Univariate: 6787.7993
+Interval_Covariates: 2386.2289
+
+>> Univariate vs Ground Truth
+WQL: 0.1021
+
+>> Covariates vs Ground Truth
+WQL: 0.0660
+
+> Store 5
+>> Covariates vs Univariate (relative)
+MAE: 805.9997
+RMSE: 897.8641
+PercentDifference: 52.2522
+Interval_Univariate: 3473.4893
+Interval_Covariates: 1383.5641
+
+>> Univariate vs Ground Truth
+WQL: 0.1128
+
+>> Covariates vs Ground Truth
+WQL: 0.0643
+
+> Store 6
+>> Covariates vs Univariate (relative)
+MAE: 813.3209
+RMSE: 927.6284
+PercentDifference: -4.7232
+Interval_Univariate: 3003.6769
+Interval_Covariates: 1231.9371
+
+>> Univariate vs Ground Truth
+WQL: 0.0979
+
+>> Covariates vs Ground Truth
+WQL: 0.0773
+
+> Store 7
+>> Covariates vs Univariate (relative)
+MAE: 1304.4399
+RMSE: 1684.7737
+PercentDifference: 25.3657
+Interval_Univariate: 7745.1529
+Interval_Covariates: 3062.9896
+
+>> Univariate vs Ground Truth
+WQL: 0.1571
+
+>> Covariates vs Ground Truth
+WQL: 0.0905
+
+> Store 8
+>> Covariates vs Univariate (relative)
+MAE: 1150.8799
+RMSE: 1295.2107
+PercentDifference: 25.6552
+Interval_Univariate: 4545.4761
+Interval_Covariates: 1810.2262
+
+>> Univariate vs Ground Truth
+WQL: 0.1146
+
+>> Covariates vs Ground Truth
+WQL: 0.0641
+
+> Store 9
+>> Covariates vs Univariate (relative)
+MAE: 737.1289
+RMSE: 943.5180
+PercentDifference: 51.1171
+Interval_Univariate: 5741.4435
+Interval_Covariates: 2651.6234
+
+>> Univariate vs Ground Truth
+WQL: 0.1033
+
+>> Covariates vs Ground Truth
+WQL: 0.0703
+
+> AVERAGE OVER STORES
+Univariate WQL: 0.1098 ± 0.0209
+Covariate  WQL: 0.0703 ± 0.0100
+
+> AVERAGE ROBUSTNESS (MAE vs Covariates)
+
+> Long Horizon Test
+This test evaluates model stability on extended forecast horizons (90 steps).
+It is not directly comparable with 30-step forecasts and is analyzed separately.
+Average prediction interval width: 1592.4142

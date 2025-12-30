@@ -6,6 +6,32 @@ import pandas as pd
 pd.set_option("future.no_silent_downcasting", True)
 
 
+def select_important_features(df):
+    """
+    Select covariates after conversion to Chronos format.
+    Expected columns:
+    - id, timestamp, target
+    - covariates used in the Chronos-2 paper
+    """
+    keep_cols = [
+        "id",
+        "timestamp",
+        "target",
+        "Customers",      # past-only covariate
+        "Open",
+        "Promo",
+        "StateHoliday",
+        "SchoolHoliday",
+        "DayOfWeek",
+    ]
+
+    missing = [c for c in keep_cols if c not in df.columns]
+    if len(missing) > 0:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    return df[keep_cols].copy()
+
+
 def temporal_split(df, test_size=30):
     if len(df) <= test_size:
         raise ValueError("Dataset too small for temporal split")
@@ -14,20 +40,40 @@ def temporal_split(df, test_size=30):
     return df_past, df_test
 
 
-def load_raw_data(train_path, store_path, store_id=1):
+def has_continuous_history(df, min_length=256):
+    """
+    Check if a time series has at least `min_length` consecutive daily points.
+    """
+    ts = df["timestamp"].sort_values()
+    diffs = ts.diff().dropna()
+
+    # identify breaks
+    breaks = diffs != pd.Timedelta(days=1)
+
+    if not breaks.any():
+        return len(ts) >= min_length
+
+    # lengths of continuous segments
+    segment_lengths = breaks.cumsum().value_counts()
+    return segment_lengths.max() >= min_length
+
+
+def load_raw_data(train_path, store_path, store_id=None):
     train = pd.read_csv(train_path, low_memory=False)
     store = pd.read_csv(store_path, low_memory=False)
 
     df = train.merge(store, on="Store", how="left")
 
-    # single-store (as in your PDF)
-    df = df[df["Store"] == store_id].copy()
+    # optional single-store filtering
+    if store_id is not None:
+        df = df[df["Store"] == store_id].copy()
 
     # chronological order
     df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values("Date").reset_index(drop=True)
+    df = df.sort_values(["Store", "Date"]).reset_index(drop=True)
 
     return df
+
 
 
 def clean_data(df, keep_closed_days=True):
@@ -55,25 +101,6 @@ def add_time_features(df):
     df["DayOfWeek"] = df["Date"].dt.dayofweek
 
     return df
-
-
-def select_important_features(df):
-    # Paper-like minimal set (plus target + timestamp + id)
-    keep_cols = [
-        "Store",
-        "Date",
-        "Sales",
-        "Customers",      # past-only covariate
-        "Open",           # known-future covariate
-        "Promo",          # known-future covariate
-        "StateHoliday",   # known-future covariate (encoded later)
-        "SchoolHoliday",  # known-future covariate
-        "DayOfWeek",      # calendar feature
-    ]
-    missing = [c for c in keep_cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-    return df[keep_cols].copy()
 
 
 def fix_mixed_types(df):

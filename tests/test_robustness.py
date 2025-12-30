@@ -9,10 +9,11 @@ from src.data.make_dataset import (
     load_raw_data,
     clean_data,
     add_time_features,
-    select_important_features,
     fix_mixed_types,
     to_chronos_df,
+    select_important_features,
 )
+
 from src.models.predict_model import load_model
 from src.models.robustness import (
     noise_test,
@@ -38,9 +39,10 @@ def prepare_df():
     df = load_raw_data(train_path, store_path, store_id=1)
     df = clean_data(df, keep_closed_days=True)
     df = add_time_features(df)
+    df = to_chronos_df(df)
+
     df = select_important_features(df)
     df = fix_mixed_types(df)
-    df = to_chronos_df(df)
     return df
 
 
