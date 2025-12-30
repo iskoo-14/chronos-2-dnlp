@@ -45,12 +45,12 @@ if __name__ == "__main__":
     STORES = []
 
     HORIZON = 30
-    CONTEXT_LENGTHS = [512]
+    CONTEXT_LENGTHS = [128, 256, 512]
     MIN_RUN = max(CONTEXT_LENGTHS) + HORIZON
     RUN_ROBUSTNESS = True  # set True to produce robustness CSVs per store (expensive)
-    SKIP_EXISTING_PROCESSED = True
-    SKIP_EXISTING_FORECASTS = True
-    SKIP_EXISTING_ROBUSTNESS = True
+    SKIP_EXISTING_PROCESSED = False
+    SKIP_EXISTING_FORECASTS = False
+    SKIP_EXISTING_ROBUSTNESS = False
 
     # Data regularity and eligibility checks
     ENFORCE_DAILY_FREQUENCY = True  # reindex each store to a daily calendar

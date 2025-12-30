@@ -179,6 +179,7 @@ def build_store_validity_report(
 
         is_valid = True
         reasons = []
+        recent_ok = True
 
         if n_obs == 0:
             is_valid = False
@@ -189,12 +190,13 @@ def build_store_validity_report(
             reasons.append(f"max_run<{min_run}")
 
         if recent_window_length is not None:
-            if not has_continuous_recent_window(
+            recent_ok = has_continuous_recent_window(
                 g,
                 date_col=date_col,
                 target_col=target_col,
                 window_length=recent_window_length,
-            ):
+            )
+            if not recent_ok:
                 is_valid = False
                 reasons.append("recent_gap")
 
@@ -205,6 +207,7 @@ def build_store_validity_report(
                 "start_date": start_date,
                 "end_date": end_date,
                 "max_consecutive_daily_run": max_run,
+                "recent_window_ok": bool(recent_ok),
                 "is_valid": bool(is_valid),
                 "reasons": ";".join(reasons) if reasons else "",
             }

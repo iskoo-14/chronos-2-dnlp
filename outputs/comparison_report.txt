@@ -1,0 +1,19 @@
+=== DNLP FORECAST COMPARISON REPORT (MULTICTX) ===
+
+Best context (covariate): 512 mean_wql=0.0821 std=0.4902 n_stores=935
+=== Context summary (unfiltered) ===
+CTX 128 covariate: mean_wql=0.0867 std=0.3687 n_stores=935
+CTX 128 univariate: mean_wql=0.1128 std=0.1926 n_stores=935
+CTX 256 covariate: mean_wql=0.0861 std=0.4171 n_stores=935
+CTX 256 univariate: mean_wql=0.1200 std=0.1719 n_stores=935
+CTX 512 covariate: mean_wql=0.0821 std=0.4902 n_stores=935
+CTX 512 univariate: mean_wql=0.0849 std=0.1735 n_stores=935
+[INFO] WQL per store saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\wql_per_store.csv
+[INFO] WQL by context saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\wql_by_context.csv
+[INFO] WQL summary saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\wql_summary.csv
+[INFO] WQL summary (filtered <= 0.5) saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\wql_summary_filtered_0.5.csv
+[INFO] WQL by context (filtered <= 0.5) saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\wql_by_context_filtered_0.5.csv
+[INFO] Robustness merged saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\robustness_per_store_merged.csv
+[INFO] Robustness summary saved to C:\Users\poten\Documents\DNLP\PROGETTO\chronos-2-dnlp\reports\robustness_summary.csv
+Long horizon (90-step) interval width:
+1592.4142
