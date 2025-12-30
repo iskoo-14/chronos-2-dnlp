@@ -1,142 +1,111 @@
-# DNLP Project – Chronos 2 Time Series Forecasting
+# DNLP Project – Chronos 2 Time Series Forecasting (Rossmann)
 
 **Required Python version: 3.10.x**
 
-This project implements a complete zero-shot time series forecasting pipeline using Chronos 2 by Amazon.  
-The goal is to evaluate univariate forecasting, multivariate forecasting with covariates, and the robustness of the model under controlled perturbations.
-
-The Rossmann Store Sales dataset is used, containing daily sales and external features such as promotions and holidays.
-
-All experiments are zero-shot.  
-No model training is performed.
+This project implements a zero-shot time series forecasting pipeline using Chronos 2 by Amazon. The goal is to evaluate univariate forecasting, multivariate forecasting with covariates, and the robustness of the model under controlled perturbations. We use the Rossmann Store Sales dataset (daily sales with promo/holiday covariates). All experiments are zero-shot: no model training or cross-store learning.
 
 ## Project Structure
 
 ```text
 chronos-2-dnlp/
 │
-├── main.py                        main forecasting pipeline
+├── main.py                        main forecasting pipeline (multi-store)
 │
 ├── src/
 │   ├── data/
-│   │   ├── make_dataset.py        loading, cleaning, feature engineering
+│   │   ├── make_dataset.py        loading, cleaning, continuity checks, store filters
 │   │   ├── train.csv              raw input data
 │   │   └── store.csv              raw input data
 │   │
-│   ├── features/
-│   │   └── build_features.py      target and covariate extraction
-│   │
 │   ├── models/
-│   │   ├── predict_model.py       Chronos 2 inference
-│   │   └── robustness.py          robustness experiments
+│   │   ├── predict_model.py       Chronos 2 inference helpers
+│   │   └── robustness.py          robustness experiments (noise, shuffle, etc.)
+│   │
+│   ├── evaluation/
+│   │   ├── compare_results.py     WQL aggregation and report
+│   │   └── select_best_context.py context selection summary
+│   │
+│   └── visualization/
+│       └── generate_plots.py      sampled plots to avoid thousands of PNG
 │
-├── evaluation/
-│   └── compare_results.py         metrics and comparison report
-│
-├── tests/
-│   ├── test_environment.py        pytest environment checks
-│   └── test_robustness.py         pytest robustness tests
-│
-└── outputs/
-    ├── *.csv                      forecasts and ground truth
-    └── figures/                  plots and visualizations
+├── reports/                       aggregated metrics (validity, WQL, robustness)
+├── outputs/                       forecasts per store/context (ctx_*)
+└── auto_runs/                     .bat/.sh scripts for end-to-end runs
 ```
 
 ## 1. Data Preparation
 
-The script `make_dataset.py` performs:
-- merge of `train.csv` and `store.csv`
-- removal of days when the store was closed
-- handling of missing values
-- creation of calendar features (day, month, year, week number)
-- conversion of categorical and mixed-type features
-
-The processed dataset is saved to:
-`src/data/processed_rossmann.csv`
+`make_dataset.py`:
+- merges `train.csv` and `store.csv`
+- enforces daily frequency per store (reindex on full calendar, no fill on target)
+- filters invalid stores: minimum consecutive run, continuous recent window, covariates not NaN, minimum observations, and “zero tail” filter (long zero runs or high zero share in the recent window)
+- adds calendar feature `DayOfWeek`
+- converts to Chronos format (`id`, `timestamp`, `target`, covariates)
+- saves per-store processed files `src/data/processed_rossmann_store_<id>.csv`
 
 ## 2. Feature Extraction
 
-We extract:
-- Target: Sales
-- Covariates: all engineered numerical features
-
-Covariates are formatted to match the Chronos 2 API:
-- past covariates shape: num_features × sequence_length
-- future covariates shape: num_features × prediction_horizon
+Target: `Sales` (`target` after conversion).  
+Covariates (paper-style): `Customers` (past-only), `Open`, `Promo`, `SchoolHoliday`, `StateHoliday`, `DayOfWeek`.
 
 ## 3. Chronos 2 Model
 
-Model used:
-- amazon/chronos-2
-- https://huggingface.co/amazon/chronos-2
-
-Key properties:
-- zero-shot forecasting
-- supports multivariate inputs
-- accepts past and future covariates
-- produces probabilistic forecasts
-- outputs quantiles: p10, median, p90
-- automatic scaling
+Model: `amazon/chronos-2` (zero-shot).  
+Key properties: multivariate input, known future covariates, quantile outputs (p10, median, p90), automatic scaling. No training/fine-tuning performed.
 
 ## 4. Forecasting Outputs
 
-Univariate Forecast  
-Uses only the Sales time series.  
-Output: `outputs/univariate.csv`
+- Context lengths: default 512 (ablation [128, 256, 512] optional).  
+- Horizon: 30.  
+- Outputs per store and context in `outputs/ctx_<len>/`:
+  - `univariate_store_<id>.csv`
+  - `covariate_store_<id>.csv`
+  - `ground_truth_store_<id>.csv`
 
-Covariate Forecast  
-Uses Sales together with all covariates.  
-Output: `outputs/covariate.csv`
+## 5. Robustness Experiments (optional)
 
-## 5. Robustness Experiments
-
-Noise Test  
-Adds a purely random covariate.  
-Output: `outputs/noise_output.csv`
-
-Shuffle Test  
-Randomly shuffles the Promo column to break temporal correlation.  
-Output: `outputs/shuffle_output.csv`
-
-Missing Future Test  
-Masks future values of SchoolHoliday.  
-Output: `outputs/missing_future_output.csv`
+Located in `src/models/robustness.py`. Tests include noise, strong noise, shuffle (Promo), missing future (SchoolHoliday), time shift, trend break, feature drop, partial mask, scaling, long horizon. Outputs are saved in `outputs/` as `<test>_output_store_<id>.csv`. Use `RUN_ROBUSTNESS=True` in `main.py` to enable (expensive).
 
 ## 6. Evaluation
 
-Evaluation is performed using:
-- temporal split (last 30 days as ground truth)
-- Weighted Quantile Loss (WQL)
-- comparison between univariate and covariate forecasts
-- relative comparisons for robustness tests
+`compare_results.py`:
+- computes Weighted Quantile Loss (WQL) per store and context
+- optional outlier filter on WQL
+- saves:
+  - `reports/wql_per_store.csv` (and `wql_per_store_all.csv` if filtered)
+  - `reports/wql_by_context.csv`
+  - `reports/wql_summary.csv`
+  - `outputs/comparison_report.txt`
 
-Results are written to:
-`outputs/comparison_report.txt`
+`select_best_context.py`:
+- prints best context per mode and a short robustness summary (if available)
 
-## Using the Makefile
+## 7. Plots
 
-make env  
-make gpu  
-make run  
-make envtest  
-make robustness  
-make test  
-make fullrun  
+`generate_plots.py` creates figures only for a small sample of stores (configurable via `PLOT_SAMPLE_STORES` / `GENERATE_PER_STORE`) to avoid thousands of PNG. Figures are saved under `outputs/figures/ctx_*`.
 
-## Running Without Make (Windows)
+## Running
 
-PowerShell setup:
-`powershell -ExecutionPolicy Bypass -File setup.ps1`
+One-click:
+- Windows: `auto_runs\run_all.bat`
+- mac/Linux: `bash auto_runs_mac/run_all.sh`
 
-After setup:
-`.venv\Scripts\python main.py`
+Manual:
+```
+python main.py
+python src/evaluation/compare_results.py
+python src/evaluation/select_best_context.py   # only if multiple contexts
+python src/visualization/generate_plots.py     # optional (sampled stores)
+```
 
-To run tests manually:
-`.venv\Scripts\pytest -q`
+Key flags in `main.py`:
+- `RUN_ALL_CONTEXTS` (default False): ablation [128, 256, 512]
+- `RUN_ROBUSTNESS` (default False): enable robustness tests
+- `SKIP_EXISTING_*`: set to False to force regeneration
+- Store filters: `MIN_RUN`, `MIN_OBS`, `CHECK_RECENT_COVS`, `ZERO_TAIL_MAX`, `ZERO_TAIL_SHARE`
 
 ## Notes
 
-- All forecasts include p10, median, and p90 quantiles.
-- Chronos 2 runs completely zero-shot.
-- Robustness tests measure whether the model truly leverages covariates.
-- The pipeline is modular and easily extensible.
+- Zero-shot only; no training or cross-store learning.
+- Filters (continuity + zero-tail) keep the setup close to the Chronos paper and drop degenerate stores.
+- Robustness is optional; enable it only if you need stability analysis (costly).***
