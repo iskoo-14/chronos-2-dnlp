@@ -3,6 +3,7 @@
 # =========================
 import os
 import pandas as pd
+
 pd.set_option("future.no_silent_downcasting", True)
 
 
@@ -39,9 +40,13 @@ def temporal_split(df, test_size=30):
     df_test = df.iloc[-test_size:].reset_index(drop=True)
     return df_past, df_test
 
-import pandas as pd
 
-def enforce_daily_frequency_store(df_store,date_col = "Date",store_col = "Store"):
+# ---------------------------------------------------------------------------#
+# DATA REGULARITY UTILITIES
+# ---------------------------------------------------------------------------#
+
+def enforce_daily_frequency_store(df_store, date_col="Date", store_col="Store"):
+    """Reindex a single-store frame on the full daily range [min, max]."""
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
@@ -53,11 +58,25 @@ def enforce_daily_frequency_store(df_store,date_col = "Date",store_col = "Store"
 
     store_id = df_store[store_col].iloc[0]
     g[store_col] = store_id
-
     return g
 
 
-def has_continuous_history(df_store ,date_col = "Date",target_col = "Sales", min_len = 256):
+def max_consecutive_daily_run(dates: pd.Series) -> int:
+    """Compute the longest streak of consecutive calendar days."""
+    if dates is None:
+        return 0
+    d = pd.to_datetime(dates).dropna().drop_duplicates().sort_values()
+    if len(d) == 0:
+        return 0
+
+    diffs = d.diff().dt.days
+    segments = diffs.ne(1).cumsum()
+    return int(d.groupby(segments).size().max())
+
+
+def has_continuous_history(
+    df_store, date_col="Date", target_col="Sales", min_len=256
+):
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
@@ -77,7 +96,10 @@ def has_continuous_history(df_store ,date_col = "Date",target_col = "Sales", min
 
     return int(max_run) >= int(min_len)
 
-def has_continuous_tail(df_store ,date_col = "Date",target_col = "Sales",context_length = 256,horizon = 30):
+
+def has_continuous_tail(
+    df_store, date_col="Date", target_col="Sales", context_length=256, horizon=30
+):
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
@@ -99,6 +121,118 @@ def has_continuous_tail(df_store ,date_col = "Date",target_col = "Sales",context
 
     return window[target_col].notna().all()
 
+
+def has_continuous_recent_window(
+    df_store, date_col="Date", target_col="Sales", window_length=256
+):
+    """
+    Check that the last `window_length` days ending at max(date) are consecutive and observed.
+    """
+    if len(df_store) == 0:
+        return False
+
+    g = df_store.copy()
+    g[date_col] = pd.to_datetime(g[date_col])
+    g = g.sort_values(date_col)
+
+    end_date = g[date_col].max()
+    start_date = end_date - pd.Timedelta(days=window_length - 1)
+    expected_range = pd.date_range(start_date, end_date, freq="D")
+
+    g_recent = (
+        g.drop_duplicates(subset=date_col)
+        .set_index(date_col)
+        .reindex(expected_range)
+        .reset_index()
+        .rename(columns={"index": date_col})
+    )
+
+    if len(g_recent) != window_length:
+        return False
+
+    return g_recent[target_col].notna().all()
+
+
+def build_store_validity_report(
+    df,
+    store_col="Store",
+    date_col="Date",
+    target_col="Sales",
+    min_run=256,
+    recent_window_length=None,
+):
+    """Return per-store continuity stats and a validity flag."""
+    if recent_window_length is None:
+        recent_window_length = min_run
+
+    records = []
+    for store_id, g in df.groupby(store_col):
+        g = g.copy()
+        g[date_col] = pd.to_datetime(g[date_col])
+        g = g.sort_values(date_col)
+
+        observed = g[g[target_col].notna()]
+        n_obs = len(observed)
+        start_date = observed[date_col].min() if n_obs > 0 else pd.NaT
+        end_date = observed[date_col].max() if n_obs > 0 else pd.NaT
+        max_run = max_consecutive_daily_run(observed[date_col])
+
+        is_valid = True
+        reasons = []
+
+        if n_obs == 0:
+            is_valid = False
+            reasons.append("no_target")
+
+        if max_run < min_run:
+            is_valid = False
+            reasons.append(f"max_run<{min_run}")
+
+        if recent_window_length is not None:
+            if not has_continuous_recent_window(
+                g,
+                date_col=date_col,
+                target_col=target_col,
+                window_length=recent_window_length,
+            ):
+                is_valid = False
+                reasons.append("recent_gap")
+
+        records.append(
+            {
+                "store_id": store_id,
+                "n_obs": n_obs,
+                "start_date": start_date,
+                "end_date": end_date,
+                "max_consecutive_daily_run": max_run,
+                "is_valid": bool(is_valid),
+                "reasons": ";".join(reasons) if reasons else "",
+            }
+        )
+
+    return pd.DataFrame(records).sort_values("store_id").reset_index(drop=True)
+
+
+def filter_valid_stores(
+    df,
+    store_col="Store",
+    date_col="Date",
+    target_col="Sales",
+    min_run=256,
+    recent_window_length=None,
+):
+    """Filter dataframe to valid stores and return df, report, and id list."""
+    report_df = build_store_validity_report(
+        df,
+        store_col=store_col,
+        date_col=date_col,
+        target_col=target_col,
+        min_run=min_run,
+        recent_window_length=recent_window_length,
+    )
+    valid_ids = report_df.loc[report_df["is_valid"], "store_id"].tolist()
+    df_filtered = df[df[store_col].isin(valid_ids)].copy()
+    return df_filtered, report_df, valid_ids
 
 
 def load_raw_data(train_path, store_path, store_id=None):
@@ -126,11 +260,17 @@ def clean_data(df, keep_closed_days=True):
     if not keep_closed_days and "Open" in df.columns:
         df = df[df["Open"] == 1].copy()
 
-    df = df.dropna(subset=["Sales"])
+    # keep target as-is (no ffill/bfill to avoid inventing sales)
+    target_col = "Sales" if "Sales" in df.columns else None
+    target_series = df[target_col] if target_col else None
 
-    # ffill/bfill like in your PDF
-    df = df.ffill().bfill().infer_objects(copy=False)
+    non_target_cols = [c for c in df.columns if c != target_col]
+    df_non_target = df[non_target_cols].ffill().bfill().infer_objects(copy=False)
 
+    if target_col:
+        df = pd.concat([df_non_target, target_series], axis=1)
+    else:
+        df = df_non_target
 
     return df
 
@@ -148,10 +288,19 @@ def add_time_features(df):
 
 def fix_mixed_types(df):
     df = df.copy()
+    target_cols = {"Sales", "target"}
+
     for col in df.columns:
         if df[col].dtype == "object":
             df[col] = df[col].astype("category").cat.codes
-    return df.fillna(0)
+
+    for col in df.columns:
+        if col in target_cols:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = df[col].fillna(0)
+
+    return df
 
 
 def to_chronos_df(df):

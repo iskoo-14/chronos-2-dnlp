@@ -9,16 +9,21 @@ OUT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "outputs",
 )
+REPORTS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "reports",
+)
+os.makedirs(REPORTS, exist_ok=True)
 
 
 # ------------------------------------------------------------
 # UTILITIES 
 # ------------------------------------------------------------
 
-def load_csv(name):
-    path = os.path.join(OUT, name)
+def load_csv(base_dir, name):
+    path = os.path.join(base_dir, name)
     if not os.path.exists(path):
-        print(f"[WARN] Missing {name}")
+        print(f"[WARN] Missing {name} in {base_dir}")
         return None
     df = pd.read_csv(path)
     return df if not df.empty else None
@@ -67,176 +72,207 @@ def compare_forecasts(base, test, label_base, label_test):
     }
 
 
+def list_context_dirs():
+    ctx_dirs = []
+    for name in os.listdir(OUT):
+        path = os.path.join(OUT, name)
+        if os.path.isdir(path) and name.startswith("ctx_"):
+            try:
+                ctx_len = int(name.replace("ctx_", ""))
+                ctx_dirs.append((ctx_len, path))
+            except ValueError:
+                continue
+    if len(ctx_dirs) == 0:
+        ctx_dirs.append((None, OUT))
+    return sorted(ctx_dirs, key=lambda x: (x[0] is None, x[0]))
+
+
+def detect_stores(ctx_dir):
+    store_files = [
+        f
+        for f in os.listdir(ctx_dir)
+        if f.startswith("univariate_store_") and f.endswith(".csv")
+    ]
+    if len(store_files) == 0:
+        if os.path.exists(os.path.join(ctx_dir, "univariate.csv")):
+            return [None]
+        return []
+    return [
+        f.replace("univariate_store_", "").replace(".csv", "")
+        for f in store_files
+    ]
+
+
+def compute_wql_per_store(context_dirs):
+    records = []
+    report_lines = ["=== DNLP FORECAST COMPARISON REPORT (MULTICTX) ===", ""]
+
+    for ctx_len, ctx_dir in context_dirs:
+        store_ids = detect_stores(ctx_dir)
+        if len(store_ids) == 0:
+            print(f"[WARN] No stores detected in {ctx_dir}")
+            continue
+
+        for store_id in store_ids:
+            suffix = "" if store_id is None else f"_store_{store_id}"
+
+            uni = load_csv(ctx_dir, f"univariate{suffix}.csv")
+            cov = load_csv(ctx_dir, f"covariate{suffix}.csv")
+            gt = load_csv(ctx_dir, f"ground_truth{suffix}.csv")
+
+            if uni is None or cov is None or gt is None:
+                continue
+
+            y_true = gt["y_true"].values
+
+            wql_uni = weighted_quantile_loss(
+                y_true,
+                {
+                    0.1: uni["p10"].values,
+                    0.5: uni["median"].values,
+                    0.9: uni["p90"].values,
+                },
+            )
+            wql_cov = weighted_quantile_loss(
+                y_true,
+                {
+                    0.1: cov["p10"].values,
+                    0.5: cov["median"].values,
+                    0.9: cov["p90"].values,
+                },
+            )
+
+            records.append(
+                {
+                    "context_length": ctx_len,
+                    "store_id": store_id if store_id is not None else "single",
+                    "mode": "univariate",
+                    "wql": wql_uni,
+                }
+            )
+            records.append(
+                {
+                    "context_length": ctx_len,
+                    "store_id": store_id if store_id is not None else "single",
+                    "mode": "covariate",
+                    "wql": wql_cov,
+                }
+            )
+
+            report_lines.append(
+                f"[CTX {ctx_len}] Store {store_id if store_id is not None else 'single'}"
+            )
+            report_lines.append(f"Univariate WQL: {wql_uni:.4f}")
+            report_lines.append(f"Covariate  WQL: {wql_cov:.4f}")
+            report_lines.append("")
+
+    return records, report_lines
+
+
+def summarize_wql(records):
+    if len(records) == 0:
+        return None, None
+    df = pd.DataFrame(records)
+    per_store_path = os.path.join(REPORTS, "wql_per_store.csv")
+    df.to_csv(per_store_path, index=False)
+
+    grouped = (
+        df.groupby(["context_length", "mode"])
+        .agg(mean_wql=("wql", "mean"), std_wql=("wql", "std"), n_stores=("store_id", "nunique"))
+        .reset_index()
+    )
+    by_ctx_path = os.path.join(REPORTS, "wql_by_context.csv")
+    grouped.to_csv(by_ctx_path, index=False)
+    return per_store_path, by_ctx_path
+
+
+def collect_robustness_summary(baseline_ctx_dir, base_context_length):
+    robustness_map = {
+        "Noise": "noise_output",
+        "StrongNoise": "strong_noise_output",
+        "Shuffle": "shuffle_output",
+        "MissingFuture": "missing_future_output",
+        "TimeShift": "time_shift_output",
+        "TrendBreak": "trend_break_output",
+        "FeatureDrop": "feature_drop_output",
+        "PartialMask": "partial_mask_output",
+        "Scaling": "scaling_output",
+    }
+
+    store_ids = detect_stores(baseline_ctx_dir)
+    records = []
+
+    for store_id in store_ids:
+        suffix = "" if store_id is None else f"_store_{store_id}"
+        cov = load_csv(baseline_ctx_dir, f"covariate{suffix}.csv")
+        if cov is None:
+            continue
+
+        for test_name, fname in robustness_map.items():
+            test_df = load_csv(OUT, f"{fname}{suffix}.csv")
+            if test_df is None:
+                continue
+
+            stats = compare_forecasts(cov, test_df, "Covariates", test_name)
+            record = {
+                "context_length": base_context_length,
+                "store_id": store_id if store_id is not None else "single",
+                "test_name": test_name,
+            }
+            record.update(stats)
+            records.append(record)
+
+    if len(records) == 0:
+        return None, None
+
+    df = pd.DataFrame(records)
+    per_store_path = os.path.join(REPORTS, "robustness_per_store_merged.csv")
+    df.to_csv(per_store_path, index=False)
+
+    numeric_cols = [c for c in df.columns if c not in ["store_id", "test_name", "context_length"]]
+    summary = (
+        df.groupby("test_name")[numeric_cols]
+        .agg(["mean", "std", "median"])
+    )
+    summary.columns = ["_".join(col).strip() for col in summary.columns.values]
+    summary = summary.reset_index()
+    summary_path = os.path.join(REPORTS, "robustness_summary.csv")
+    summary.to_csv(summary_path, index=False)
+    return per_store_path, summary_path
+
+
 # ------------------------------------------------------------
 # MAIN
 # ------------------------------------------------------------
 
 if __name__ == "__main__":
 
-    report = []
-    report.append("=== DNLP FORECAST COMPARISON REPORT (MULTISTORE) ===\n")
+    context_dirs = list_context_dirs()
+    wql_records, text_report = compute_wql_per_store(context_dirs)
+    per_store_path, by_ctx_path = summarize_wql(wql_records)
 
-    # --------------------------------------------------------
-    # DETECT STORES 
-    # --------------------------------------------------------
-
-    store_files = [
-        f
-        for f in os.listdir(OUT)
-        if f.startswith("univariate_store_") and f.endswith(".csv")
-    ]
-
-    # SINGLE-STORE FALLBACK 
-    if len(store_files) == 0:
-        store_ids = [None]
-    else:
-        store_ids = [
-            f.replace("univariate_store_", "").replace(".csv", "")
-            for f in store_files
-        ]
-
-    # --------------------------------------------------------
-    # ACCUMULATORS
-    # --------------------------------------------------------
-
-    wql_uni_all = []
-    wql_cov_all = []
-
-    # Robustness accumulators (relative)
-    robustness_stats = {
-        "Noise": [],
-        "StrongNoise": [],
-        "Shuffle": [],
-        "MissingFuture": [],
-        "TimeShift": [],
-        "TrendBreak": [],
-        "FeatureDrop": [],
-        "PartialMask": [],
-        "Scaling": [],
-    }
-
-    for store_id in store_ids:
-
-        suffix = "" if store_id is None else f"_store_{store_id}"
-
-        uni = load_csv(f"univariate{suffix}.csv")
-        cov = load_csv(f"covariate{suffix}.csv")
-        gt = load_csv(f"ground_truth{suffix}.csv")
-
-        if uni is None or cov is None or gt is None:
-            continue
-
-        y_true = gt["y_true"].values
-
-        # --------------------
-        # BASELINE COMPARISON 
-        # --------------------
-        report.append(f"> Store {store_id if store_id is not None else 'single'}")
-
-        report.append(">> Covariates vs Univariate (relative)")
-        stats = compare_forecasts(uni, cov, "Univariate", "Covariates")
-        for k, v in stats.items():
-            report.append(f"{k}: {v:.4f}")
-        report.append("")
-
-        # --------------------
-        # WQL vs GROUND TRUTH 
-
-        wql_uni = weighted_quantile_loss(
-            y_true,
-            {
-                0.1: uni["p10"].values,
-                0.5: uni["median"].values,
-                0.9: uni["p90"].values,
-            },
-        )
-        wql_cov = weighted_quantile_loss(
-            y_true,
-            {
-                0.1: cov["p10"].values,
-                0.5: cov["median"].values,
-                0.9: cov["p90"].values,
-            },
-        )
-
-        report.append(">> Univariate vs Ground Truth")
-        report.append(f"WQL: {wql_uni:.4f}")
-        report.append("")
-
-        report.append(">> Covariates vs Ground Truth")
-        report.append(f"WQL: {wql_cov:.4f}")
-        report.append("")
-
-        wql_uni_all.append(wql_uni)
-        wql_cov_all.append(wql_cov)
-
-        # --------------------
-        # ROBUSTNESS 
-        # --------------------
-
-        robustness_map = {
-            "Noise": "noise_output",
-            "StrongNoise": "strong_noise_output",
-            "Shuffle": "shuffle_output",
-            "MissingFuture": "missing_future_output",
-            "TimeShift": "time_shift_output",
-            "TrendBreak": "trend_break_output",
-            "FeatureDrop": "feature_drop_output",
-            "PartialMask": "partial_mask_output",
-            "Scaling": "scaling_output",
-        }
-
-        for label, fname in robustness_map.items():
-            test_df = load_csv(f"{fname}{suffix}.csv")
-            if test_df is None:
-                continue
-
-            stats = compare_forecasts(cov, test_df, "Covariates", label)
-            robustness_stats[label].append(stats["MAE"])
-
-    # --------------------------------------------------------
-    # FINAL AVERAGE SUMMARY 
-    # --------------------------------------------------------
-
-    report.append("> AVERAGE OVER STORES")
-    report.append(
-        f"Univariate WQL: {np.mean(wql_uni_all):.4f} ± {np.std(wql_uni_all):.4f}"
+    baseline_ctx = next((c for c in context_dirs if c[0] == 256), context_dirs[0])
+    robustness_paths = collect_robustness_summary(
+        baseline_ctx_dir=baseline_ctx[1], base_context_length=baseline_ctx[0]
     )
-    report.append(
-        f"Covariate  WQL: {np.mean(wql_cov_all):.4f} ± {np.std(wql_cov_all):.4f}"
-    )
-    report.append("")
 
-    report.append("> AVERAGE ROBUSTNESS (MAE vs Covariates)")
-    for label, values in robustness_stats.items():
-        if len(values) > 0:
-            report.append(f"{label}: {np.mean(values):.4f}")
-    report.append("")
+    if per_store_path:
+        text_report.append(f"[INFO] WQL per store saved to {per_store_path}")
+    if by_ctx_path:
+        text_report.append(f"[INFO] WQL by context saved to {by_ctx_path}")
+    if robustness_paths and robustness_paths[0]:
+        text_report.append(f"[INFO] Robustness merged saved to {robustness_paths[0]}")
+    if robustness_paths and robustness_paths[1]:
+        text_report.append(f"[INFO] Robustness summary saved to {robustness_paths[1]}")
 
-    # --------------------------------------------------------
-    # LONG HORIZON 
-    # --------------------------------------------------------
-
-    long_horizon = load_csv("long_horizon_output.csv")
+    # LONG HORIZON (optional, legacy)
+    long_horizon = load_csv(OUT, "long_horizon_output.csv")
     if long_horizon is not None:
-        report.append("> Long Horizon Test")
-        report.append(
-            "This test evaluates model stability on extended forecast horizons (90 steps)."
-        )
-        report.append(
-            "It is not directly comparable with 30-step forecasts and is analyzed separately."
-        )
-        report.append(
-            f"Average prediction interval width: {interval_width(long_horizon):.4f}"
-        )
-        report.append("")
-
-    # --------------------------------------------------------
-    # SAVE REPORT
-    # --------------------------------------------------------
+        text_report.append("Long horizon (90-step) interval width:")
+        text_report.append(f"{interval_width(long_horizon):.4f}")
 
     out_path = os.path.join(OUT, "comparison_report.txt")
     with open(out_path, "w") as f:
-        f.write("\n".join(report))
+        f.write("\n".join(text_report))
 
     print(f"[INFO] Saved {out_path}")
