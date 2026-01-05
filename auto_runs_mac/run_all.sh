@@ -25,12 +25,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "------------------------------------------------------------"
-echo "[STEP 3] Selecting best context (optional summary)"
-echo "------------------------------------------------------------"
-python src/evaluation/select_best_context.py
-
-echo "------------------------------------------------------------"
-echo "[STEP 4] Generating plots (sampled stores only)"
+echo "[STEP 3] Generating plots (sampled stores only)"
 echo "------------------------------------------------------------"
 python src/visualization/generate_plots.py
 
