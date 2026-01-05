@@ -48,6 +48,12 @@ chronos-2-dnlp/
 Target: `Sales` (`target` after conversion).  
 Covariates (paper-style): `Customers` (past-only), `Open`, `Promo`, `SchoolHoliday`, `StateHoliday`, `DayOfWeek`.
 
+Additional derived covariates (feature engineering):
+- `PromoEff = Promo * Open` (remove ambiguous Promo when closed)
+- `ClosedRunLen` (capped) and `DaysToNextOpen` (capped) to expose long closures
+- `OpenCat` (0/1 categorical) for some wrappers
+All are added in `main.py` and used as known-future covariates.
+
 ## 3. Chronos 2 Model
 
 Model: `amazon/chronos-2` (zero-shot).  
@@ -61,6 +67,8 @@ Key properties: multivariate input, known future covariates, quantile outputs (p
   - `univariate_store_<id>.csv`
   - `covariate_store_<id>.csv`
   - `ground_truth_store_<id>.csv`
+- MAE diagnostics per store: `reports/mae_open_closed.csv` (all/open/closed splits)
+- Optional system-gated covariates (forecast * Open) via `maingated.py`, saved as `covariate_gated_store_<id>.csv`
 
 ## 5. Robustness Experiments (optional)
 
@@ -82,7 +90,7 @@ Located in `src/models/robustness.py`. Tests include noise, strong noise, shuffl
 
 ## 7. Plots
 
-`generate_plots.py` creates figures only for a small sample of stores (configurable via `PLOT_SAMPLE_STORES` / `GENERATE_PER_STORE`) to avoid thousands of PNG. Figures are saved under `outputs/figures/ctx_*`.
+`generate_plots.py` creates figures only for a small sample of stores (configurable via `PLOT_SAMPLE_STORES` / `GENERATE_PER_STORE`) to avoid thousands of PNG. Worst stores (by `mae_open_closed.csv`), a few best, and optional samples are always included. Figures are saved under `outputs/figures/ctx_*` split into `bad/`, `good/`, `other/`. Selection summary: `reports/plot_selection.csv`.
 
 ## Running
 
