@@ -19,24 +19,28 @@ def _log(msg, verbose):
 # PATH UTILS 
 # ------------------------------------------------------------
 
-def _ensure_outputs_dir():
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    out_dir = os.path.join(root, "outputs")
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
+def _ensure_outputs_dir(output_root=None):
+    if output_root is None:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        output_root = os.path.join(root, "outputs")
+    os.makedirs(output_root, exist_ok=True)
+    return output_root
 
 
 # ------------------------------------------------------------
 # CONTEXT / FUTURE SPLIT 
 # ------------------------------------------------------------
 
-def _make_context_future(df, horizon=30, context_len=256):
+def _make_context_future(df, horizon=30, context_len=None):
     if "timestamp" not in df.columns:
         raise ValueError("df must contain 'timestamp' column")
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     if len(df) <= horizon:
         raise ValueError("Not enough rows for the requested horizon")
+
+    if context_len is None:
+        context_len = max(0, len(df) - horizon)
 
     start = max(0, len(df) - (context_len + horizon))
     mid = len(df) - horizon
@@ -110,9 +114,9 @@ def _prepare_cov_frames(
 # RUN PREDICT_DF 
 # ------------------------------------------------------------
 
-def _run_predict_df(model, context_df, future_df, horizon, out_name):
+def _run_predict_df(model, context_df, future_df, horizon, out_name, output_root=None):
     pred = predict_df_covariates(model, context_df, future_df, horizon=horizon)
-    out_path = os.path.join(_ensure_outputs_dir(), out_name)
+    out_path = os.path.join(_ensure_outputs_dir(output_root), out_name)
     save_quantiles_csv(pred, out_path, verbose=False)
     return pred
 
@@ -121,11 +125,11 @@ def _run_predict_df(model, context_df, future_df, horizon, out_name):
 # ROBUSTNESS TESTS 
 # ------------------------------------------------------------
 
-def noise_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
+def noise_test(model, df, horizon=30, seed=0, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Noise test: add random covariate", verbose)
     np.random.seed(seed)
 
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     ctx = ctx.copy()
@@ -142,20 +146,21 @@ def noise_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
         future_cov,
         horizon,
         f"noise_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix="", verbose=True):
+def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Strong noise: add Gaussian noise to covariates", verbose)
     np.random.seed(seed)
 
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     ctx2 = ctx.copy()
     fut2 = fut.copy()
 
-    noisy_cols = past_only + future_covs
+    noisy_cols = [c for c in past_only + future_covs if c not in {"Open", "SchoolHoliday", "StateHoliday", "DayOfWeek"}]
     for c in noisy_cols:
         ctx2[c] = (ctx2[c].astype(float) + sigma * np.random.randn(len(ctx2))).astype(np.float32)
         if c in fut2.columns:
@@ -168,14 +173,15 @@ def strong_noise_test(model, df, horizon=30, sigma=5.0, seed=0, suffix="", verbo
         future_cov,
         horizon,
         f"strong_noise_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def shuffle_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
+def shuffle_test(model, df, horizon=30, seed=0, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Shuffle test: shuffle Promo to break temporal correlation", verbose)
     np.random.seed(seed)
 
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     ctx2 = ctx.copy()
@@ -194,16 +200,18 @@ def shuffle_test(model, df, horizon=30, seed=0, suffix="", verbose=True):
         future_cov,
         horizon,
         f"shuffle_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def missing_future_test(model, df, horizon=30, suffix="", verbose=True):
+def missing_future_test(model, df, horizon=30, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Missing future: mask future SchoolHoliday", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     fut2 = fut.copy()
-    fut2["SchoolHoliday"] = 0
+    # use NaN (float) to simulate missing information (Chronos will mask)
+    fut2["SchoolHoliday"] = np.nan
 
     context_cov, future_cov = _prepare_cov_frames(ctx, fut2, past_only, future_covs)
     return _run_predict_df(
@@ -212,12 +220,13 @@ def missing_future_test(model, df, horizon=30, suffix="", verbose=True):
         future_cov,
         horizon,
         f"missing_future_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def time_shift_test(model, df, horizon=30, shift=7, suffix="", verbose=True):
+def time_shift_test(model, df, horizon=30, shift=7, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Time shift: shift Promo forward/backward", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     promo_all = np.concatenate([ctx["Promo"].values, fut["Promo"].values])
@@ -236,12 +245,13 @@ def time_shift_test(model, df, horizon=30, shift=7, suffix="", verbose=True):
         future_cov,
         horizon,
         f"time_shift_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def trend_break_test(model, df, horizon=30, jump=1.0, suffix="", verbose=True):
+def trend_break_test(model, df, horizon=30, jump=1.0, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Trend break: structural change in Promo", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     fut2 = fut.copy()
@@ -255,12 +265,13 @@ def trend_break_test(model, df, horizon=30, jump=1.0, suffix="", verbose=True):
         future_cov,
         horizon,
         f"trend_break_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix="", verbose=True):
+def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix="", context_len=None, output_root=None, verbose=True):
     _log(f"[ROBUSTNESS] Feature drop: remove '{drop_feature}' from covariates", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     context_cov, future_cov = _prepare_cov_frames(
@@ -276,12 +287,13 @@ def feature_drop_test(model, df, horizon=30, drop_feature="Promo", suffix="", ve
         future_cov,
         horizon,
         f"feature_drop_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def partial_mask_test(model, df, horizon=30, frac=0.3, suffix="", verbose=True):
+def partial_mask_test(model, df, horizon=30, frac=0.3, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Partial mask: mask last portion of Promo history", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     ctx2 = ctx.copy()
@@ -296,18 +308,19 @@ def partial_mask_test(model, df, horizon=30, frac=0.3, suffix="", verbose=True):
         future_cov,
         horizon,
         f"partial_mask_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def scaling_test(model, df, horizon=30, scale=10.0, suffix="", verbose=True):
+def scaling_test(model, df, horizon=30, scale=10.0, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Scaling: rescale covariates", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     ctx2 = ctx.copy()
     fut2 = fut.copy()
 
-    for c in past_only + future_covs:
+    for c in [c for c in past_only + future_covs if c not in {"Open", "SchoolHoliday", "StateHoliday", "DayOfWeek"}]:
         ctx2[c] = (ctx2[c].astype(float) * scale).astype(np.float32)
         if c in fut2.columns:
             fut2[c] = (fut2[c].astype(float) * scale).astype(np.float32)
@@ -319,12 +332,13 @@ def scaling_test(model, df, horizon=30, scale=10.0, suffix="", verbose=True):
         future_cov,
         horizon,
         f"scaling_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
-def long_horizon_test(model, df, horizon=90, suffix="", verbose=True):
+def long_horizon_test(model, df, horizon=90, suffix="", context_len=None, output_root=None, verbose=True):
     _log("[ROBUSTNESS] Long horizon: descriptive stability test (90 steps)", verbose)
-    ctx, fut = _make_context_future(df, horizon=horizon)
+    ctx, fut = _make_context_future(df, horizon=horizon, context_len=context_len)
     past_only, future_covs = _base_covariates()
 
     context_cov, future_cov = _prepare_cov_frames(ctx, fut, past_only, future_covs)
@@ -334,6 +348,7 @@ def long_horizon_test(model, df, horizon=90, suffix="", verbose=True):
         future_cov,
         horizon,
         f"long_horizon_output{suffix}.csv",
+        output_root=output_root,
     )
 
 
@@ -341,16 +356,16 @@ def long_horizon_test(model, df, horizon=90, suffix="", verbose=True):
 # MULTISTORE RUNNER 
 # ------------------------------------------------------------
 
-def run_all_robustness_tests(model, df, store_id=None, verbose=False):
+def run_all_robustness_tests(model, df, store_id=None, context_len=None, output_root=None, verbose=False):
     suffix = "" if store_id is None else f"_store_{store_id}"
 
-    noise_test(model, df, suffix=suffix, verbose=verbose)
-    strong_noise_test(model, df, suffix=suffix, verbose=verbose)
-    shuffle_test(model, df, suffix=suffix, verbose=verbose)
-    missing_future_test(model, df, suffix=suffix, verbose=verbose)
-    time_shift_test(model, df, suffix=suffix, verbose=verbose)
-    trend_break_test(model, df, suffix=suffix, verbose=verbose)
-    feature_drop_test(model, df, suffix=suffix, verbose=verbose)
-    partial_mask_test(model, df, suffix=suffix, verbose=verbose)
-    scaling_test(model, df, suffix=suffix, verbose=verbose)
-    long_horizon_test(model, df, suffix=suffix, verbose=verbose)
+    noise_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    strong_noise_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    shuffle_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    missing_future_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    time_shift_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    trend_break_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    feature_drop_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    partial_mask_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    scaling_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)
+    long_horizon_test(model, df, suffix=suffix, context_len=context_len, output_root=output_root, verbose=verbose)

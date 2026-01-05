@@ -1,0 +1,18 @@
+Plot generation configuration (src/visualization/generate_plots.py)
+------------------------------------------------------------------
+Key toggles:
+- GENERATE_PER_STORE: True to produce per-store plots.
+- PLOT_ALL_STORES: True to plot every store detected in a context.
+- PLOT_SAMPLE_STORES: list of store ids to force-include (strings or ints). Empty = use fallback.
+- MAX_PLOTS_PER_CTX: fallback limit when PLOT_ALL_STORES=False and no sample match.
+- ZERO_TAIL_THRESHOLD: include stores whose ground truth tail is mostly zeros.
+- CASE_STUDY_PAST_WINDOW: history window (days) shown in case-study plots; None = full.
+
+Error-based inclusion:
+- ERROR_REPORT_PATH: path to metrics report (default reports/mae_open_closed.csv).
+- ERROR_METRIC: column used to rank stores (default mae_closed).
+- ERROR_TOP_N: include top-N worst stores by the chosen metric.
+- ERROR_MIN: optional threshold to include stores above a value.
+
+Outputs:
+- figures saved under outputs/figures/<ctx_label>/ for each context directory under outputs/forecasts.

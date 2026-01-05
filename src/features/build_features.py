@@ -1,3 +1,12 @@
+"""
+LEGACY / UNUSED BY MAIN PIPELINE
+
+These helpers fill missing values with 0.0 (including target), which is
+inconsistent with the current Chronos-2 pipeline that keeps NaN gaps and
+derives a mask. Kept for reference only; prefer the preprocessing in
+src/data/make_dataset.py.
+"""
+
 import numpy as np
 import pandas as pd
 
@@ -8,8 +17,8 @@ def extract_target(df, target_col="Sales"):
 
 
 def extract_covariates(df, target_col="Sales"):
-    """Extract all non-target numerical features as covariates."""
-    
+    """Extract all non-target numerical features as covariates (legacy: fills NaN to 0)."""
+
     # Remove target and date (non-feature)
     df = df.drop(columns=[target_col, "Date"], errors="ignore")
 

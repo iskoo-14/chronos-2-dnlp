@@ -17,9 +17,11 @@ seaborn
 python-dateutil
 tqdm
 requests
+hf_xet
 
 # HuggingFace (NO extras)
 huggingface-hub[hf_text]
 
 # Testing
 pytest
+

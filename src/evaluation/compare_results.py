@@ -9,6 +9,8 @@ OUT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "outputs",
 )
+FORECAST_OUT = os.path.join(OUT, "forecasts")
+ROBUSTNESS_OUT = os.path.join(OUT, "robustness")
 REPORTS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "reports",
@@ -77,16 +79,29 @@ def compare_forecasts(base, test, label_base, label_test):
 
 def list_context_dirs():
     ctx_dirs = []
-    for name in os.listdir(OUT):
-        path = os.path.join(OUT, name)
-        if os.path.isdir(path) and name.startswith("ctx_"):
-            try:
-                ctx_len = int(name.replace("ctx_", ""))
-                ctx_dirs.append((ctx_len, path))
-            except ValueError:
-                continue
+
+    def _scan(base_dir):
+        found = []
+        if not os.path.exists(base_dir):
+            return found
+        for name in os.listdir(base_dir):
+            path = os.path.join(base_dir, name)
+            if os.path.isdir(path) and name.startswith("ctx_"):
+                try:
+                    ctx_len = int(name.replace("ctx_", ""))
+                    found.append((ctx_len, path))
+                except ValueError:
+                    continue
+        return found
+
+    ctx_dirs.extend(_scan(FORECAST_OUT))
     if len(ctx_dirs) == 0:
-        ctx_dirs.append((None, OUT))
+        ctx_dirs.extend(_scan(OUT))
+
+    if len(ctx_dirs) == 0:
+        base = FORECAST_OUT if os.path.exists(FORECAST_OUT) else OUT
+        ctx_dirs.append((None, base))
+
     return sorted(ctx_dirs, key=lambda x: (x[0] is None, x[0]))
 
 
@@ -151,6 +166,10 @@ def compute_wql_per_store(context_dirs, include_store_lines=True):
                     "store_id": store_id if store_id is not None else "single",
                     "mode": "univariate",
                     "wql": wql_uni,
+                    "mae": mae(y_true, uni["median"].values),
+                    "rmse": rmse(y_true, uni["median"].values),
+                    "p10_under": float((y_true < uni["p10"].values).mean()),
+                    "p90_over": float((y_true > uni["p90"].values).mean()),
                 }
             )
             records.append(
@@ -159,6 +178,10 @@ def compute_wql_per_store(context_dirs, include_store_lines=True):
                     "store_id": store_id if store_id is not None else "single",
                     "mode": "covariate",
                     "wql": wql_cov,
+                    "mae": mae(y_true, cov["median"].values),
+                    "rmse": rmse(y_true, cov["median"].values),
+                    "p10_under": float((y_true < cov["p10"].values).mean()),
+                    "p90_over": float((y_true > cov["p90"].values).mean()),
                 }
             )
 
@@ -193,7 +216,15 @@ def summarize_wql(records, apply_filter=False, threshold=OUTLIER_THRESHOLD):
 
     grouped = (
         df_used.groupby(["context_length", "mode"])
-        .agg(mean_wql=("wql", "mean"), std_wql=("wql", "std"), n_stores=("store_id", "nunique"))
+        .agg(
+            mean_wql=("wql", "mean"),
+            std_wql=("wql", "std"),
+            mean_mae=("mae", "mean"),
+            mean_rmse=("rmse", "mean"),
+            mean_p10_under=("p10_under", "mean"),
+            mean_p90_over=("p90_over", "mean"),
+            n_stores=("store_id", "nunique"),
+        )
         .reset_index()
     )
     by_ctx_path = os.path.join(REPORTS, "wql_by_context.csv")
@@ -229,6 +260,18 @@ def collect_robustness_summary(baseline_ctx_dir, base_context_length):
         "Scaling": "scaling_output",
     }
 
+    def _robust_dir_for_context(ctx_len):
+        if ctx_len is None:
+            return ROBUSTNESS_OUT if os.path.exists(ROBUSTNESS_OUT) else OUT
+        candidate = os.path.join(ROBUSTNESS_OUT, f"ctx_{ctx_len}")
+        if os.path.exists(candidate):
+            return candidate
+        if os.path.exists(ROBUSTNESS_OUT):
+            return ROBUSTNESS_OUT
+        return OUT
+
+    robust_dir = _robust_dir_for_context(base_context_length)
+
     store_ids = detect_stores(baseline_ctx_dir)
     records = []
 
@@ -239,7 +282,7 @@ def collect_robustness_summary(baseline_ctx_dir, base_context_length):
             continue
 
         for test_name, fname in robustness_map.items():
-            test_df = load_csv(OUT, f"{fname}{suffix}.csv")
+            test_df = load_csv(robust_dir, f"{fname}{suffix}.csv")
             if test_df is None:
                 continue
 
@@ -283,7 +326,22 @@ if __name__ == "__main__":
         wql_records, apply_filter=APPLY_OUTLIER_FILTER, threshold=OUTLIER_THRESHOLD
     )
 
-    baseline_ctx = next((c for c in context_dirs if c[0] == 256), context_dirs[0])
+    if len(context_dirs) == 1:
+        baseline_ctx = context_dirs[0]
+    elif grouped_df is not None and not grouped_df.empty:
+        best_cov = (
+            grouped_df[grouped_df["mode"] == "covariate"]
+            .sort_values("mean_wql", ascending=True)
+            .head(1)
+        )
+        if len(best_cov) > 0:
+            best_ctx_len = best_cov.iloc[0]["context_length"]
+            baseline_ctx = next((c for c in context_dirs if c[0] == best_ctx_len), context_dirs[0])
+        else:
+            baseline_ctx = context_dirs[0]
+    else:
+        baseline_ctx = context_dirs[0]
+
     robustness_paths = collect_robustness_summary(
         baseline_ctx_dir=baseline_ctx[1], base_context_length=baseline_ctx[0]
     )
@@ -308,7 +366,10 @@ if __name__ == "__main__":
         for _, row in grouped_df.sort_values(["context_length", "mode"]).iterrows():
             text_report.append(
                 f"CTX {row['context_length']} {row['mode']}: "
-                f"mean_wql={row['mean_wql']:.4f} std={row['std_wql']:.4f} n_stores={int(row['n_stores'])}"
+                f"mean_wql={row['mean_wql']:.4f} std={row['std_wql']:.4f} "
+                f"mean_mae={row['mean_mae']:.2f} mean_rmse={row['mean_rmse']:.2f} "
+                f"p10_under={row['mean_p10_under']:.2f} p90_over={row['mean_p90_over']:.2f} "
+                f"n_stores={int(row['n_stores'])}"
             )
 
     if per_store_path:
@@ -323,13 +384,7 @@ if __name__ == "__main__":
     if robustness_paths and robustness_paths[1]:
         text_report.append(f"[INFO] Robustness summary saved to {robustness_paths[1]}")
 
-    # LONG HORIZON (optional, legacy)
-    long_horizon = load_csv(OUT, "long_horizon_output.csv")
-    if long_horizon is not None:
-        text_report.append("Long horizon (90-step) interval width:")
-        text_report.append(f"{interval_width(long_horizon):.4f}")
-
-    out_path = os.path.join(OUT, "comparison_report.txt")
+    out_path = os.path.join(REPORTS, "comparison_report.txt")
     with open(out_path, "w") as f:
         f.write("\n".join(text_report))
 

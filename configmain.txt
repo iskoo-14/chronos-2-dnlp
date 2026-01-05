@@ -1,0 +1,31 @@
+Main pipeline configuration (main.py)
+--------------------------------------
+Key toggles:
+- STORES: list of store ids; empty = all valid.
+- HORIZON: forecast horizon (days).
+- BEST_CONTEXT: context length used when RUN_ALL_CONTEXTS=False.
+- RUN_ALL_CONTEXTS: True to run multiple contexts (see CONTEXT_LENGTHS).
+- CONTEXT_LENGTHS: list of contexts to evaluate when RUN_ALL_CONTEXTS=True.
+- RUN_ROBUSTNESS: True to run stress tests and save robustness outputs.
+- SKIP_EXISTING_PROCESSED / FORECASTS / ROBUSTNESS: True to reuse artifacts.
+- ENFORCE_DAILY_FREQUENCY: True to reindex daily per store.
+- REQUIRE_RECENT_WINDOW: True to enforce continuity on the last MIN_RUN days.
+- MIN_OBS, CHECK_RECENT_COVS: data quality gates (optional).
+- ZERO_TAIL_OPEN_MAX / ZERO_TAIL_OPEN_SHARE: reject stores with many zeros on open days.
+- CHECK_FUTURE_COVS: list of known-future covariates to validate in the future window.
+- SAVE_FUTURE_DEBUG: True to dump future debug CSVs.
+- SANITIZE_PROMO_WHEN_CLOSED: True to zero Promo when Open==0 (context + future).
+- FORCE_ZERO_WHEN_CLOSED: hard rule to zero forecasts where Open==0.
+- SAVE_OPEN_GATED_COVARIATE: save covariate forecast gated by Open.
+- DIAG_COMPARE_FEATURES / DIAG_STORE_ID: A/B test (full vs base covariates) for selected store.
+
+Covariate sets:
+- PAST_ONLY_COVS: past-only features (Customers).
+- FUTURE_BASE_COVS: known-future features before derivation (Open, Promo, holidays, DayOfWeek).
+- KNOWN_FUTURE_COVS: final list after derivation (PromoEff, ClosedRunLen, DaysToNextOpen, OpenCat, etc.).
+- CLOSED_RUN_CAP: cap for run-length / days-to-next-open.
+
+Outputs:
+- forecasts: univariate and covariate (raw), plus gated covariate if enabled.
+- reports: store_validity, mae_open_closed, wql_*.
+- figures: generated separately via generate_plots.py.

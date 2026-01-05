@@ -34,6 +34,11 @@ def select_important_features(df):
 
 
 def temporal_split(df, test_size=30):
+    # ensure temporal order to avoid misaligned split
+    if "timestamp" in df.columns:
+        df = df.sort_values("timestamp").reset_index(drop=True)
+    elif "Date" in df.columns:
+        df = df.sort_values("Date").reset_index(drop=True)
     if len(df) <= test_size:
         raise ValueError("Dataset too small for temporal split")
     df_past = df.iloc[:-test_size].reset_index(drop=True)
@@ -50,6 +55,7 @@ def enforce_daily_frequency_store(df_store, date_col="Date", store_col="Store"):
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
+    g = g.drop_duplicates(subset=[date_col], keep="last")
 
     full_idx = pd.date_range(g[date_col].min(), g[date_col].max(), freq="D")
     g = g.set_index(date_col).reindex(full_idx)
@@ -77,6 +83,7 @@ def max_consecutive_daily_run(dates: pd.Series) -> int:
 def has_continuous_history(
     df_store, date_col="Date", target_col="Sales", min_len=256
 ):
+    # Legacy utility (unused in main pipeline); kept for reference only.
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
@@ -100,6 +107,7 @@ def has_continuous_history(
 def has_continuous_tail(
     df_store, date_col="Date", target_col="Sales", context_length=256, horizon=30
 ):
+    # Legacy utility (unused in main pipeline); kept for reference only.
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
     g = g.sort_values(date_col)
@@ -133,7 +141,7 @@ def has_continuous_recent_window(
 
     g = df_store.copy()
     g[date_col] = pd.to_datetime(g[date_col])
-    g = g.sort_values(date_col)
+    g = g.sort_values(date_col).drop_duplicates(subset=[date_col], keep="last")
 
     end_date = g[date_col].max()
     start_date = end_date - pd.Timedelta(days=window_length - 1)
@@ -164,12 +172,11 @@ def build_store_validity_report(
     min_mean_target=None,
     covariate_cols=None,
     check_recent_covariates=False,
-    zero_tail_max=None,
-    zero_tail_share=None,
+    zero_tail_open_max=None,
+    zero_tail_open_share=None,
+    check_future_covariates=None,
 ):
     """Return per-store continuity stats and a validity flag."""
-    if recent_window_length is None:
-        recent_window_length = min_run
     if covariate_cols is None:
         covariate_cols = []
 
@@ -182,20 +189,28 @@ def build_store_validity_report(
         observed = g[g[target_col].notna()]
         n_obs = len(observed)
         start_date = observed[date_col].min() if n_obs > 0 else pd.NaT
-        end_date = observed[date_col].max() if n_obs > 0 else pd.NaT
+        start_date_all = g[date_col].min()
+        end_date_observed = observed[date_col].max() if n_obs > 0 else pd.NaT
+        end_date_all = g[date_col].max()
         max_run = max_consecutive_daily_run(observed[date_col])
 
         is_valid = True
         reasons = []
         recent_ok = True
         cov_ok = True
-        zero_tail_ok = True
+        zero_tail_open_ok = True
+        zero_open_count = 0
+        open_count = 0
+        zero_open_share = 0.0
+        max_zero_open_run = 0
+        future_na_cols = []
 
         if n_obs == 0:
             is_valid = False
             reasons.append("no_target")
 
-        if max_run < min_run:
+        # Treat max_run as gate only if recent window check is disabled.
+        if recent_window_length is None and max_run < min_run:
             is_valid = False
             reasons.append(f"max_run<{min_run}")
 
@@ -220,7 +235,7 @@ def build_store_validity_report(
                 is_valid = False
                 reasons.append("recent_gap")
 
-        if check_recent_covariates and covariate_cols:
+        if check_recent_covariates and covariate_cols and recent_window_length is not None:
             end_date_cov = g[date_col].max()
             start_date_cov = end_date_cov - pd.Timedelta(days=recent_window_length - 1)
             expected_range_cov = pd.date_range(start_date_cov, end_date_cov, freq="D")
@@ -235,8 +250,26 @@ def build_store_validity_report(
                 is_valid = False
                 reasons.append("recent_cov_na")
 
-        # Zero-tail checks in the recent window
-        if (zero_tail_max is not None or zero_tail_share is not None) and recent_window_length is not None:
+        # Known future covariates check (Open/Promo/etc.) limited to recent window
+        if check_future_covariates and recent_window_length is not None:
+            future_cols = check_future_covariates
+            end_date_future = g[date_col].max()
+            start_date_future = end_date_future - pd.Timedelta(days=recent_window_length - 1)
+            expected_range_future = pd.date_range(start_date_future, end_date_future, freq="D")
+            g_recent_future = (
+                g.drop_duplicates(subset=date_col)
+                .set_index(date_col)
+                .reindex(expected_range_future)
+            )
+            na_mask = g_recent_future[future_cols].isna()
+            future_na_cols = [c for c in future_cols if na_mask[c].any()]
+            future_na = len(future_na_cols) > 0
+            if future_na:
+                is_valid = False
+                reasons.append(f"known_future_na[{','.join(future_na_cols)}]")
+
+        # Zero-tail on open days only (exclude real closures Open=0)
+        if recent_window_length is not None and "Open" in g.columns:
             end_date_tail = g[date_col].max()
             start_date_tail = end_date_tail - pd.Timedelta(days=recent_window_length - 1)
             expected_range_tail = pd.date_range(start_date_tail, end_date_tail, freq="D")
@@ -245,33 +278,45 @@ def build_store_validity_report(
                 .set_index(date_col)
                 .reindex(expected_range_tail)
             )
-            tail_vals = g_recent_tail[target_col]
-            zeros = tail_vals == 0
-            if zero_tail_max is not None:
-                # longest consecutive run of zeros
-                segments = zeros.ne(zeros.shift()).cumsum()
-                max_zero_run = zeros.groupby(segments).sum().max() or 0
-                if int(max_zero_run) > zero_tail_max:
-                    zero_tail_ok = False
+            open_vals = pd.to_numeric(g_recent_tail["Open"], errors="coerce")
+            open_mask = open_vals == 1
+            zeros_open = (g_recent_tail[target_col] == 0) & open_mask
+            open_count = int(open_mask.sum())
+            zero_open_count = int(zeros_open.sum())
+            zero_open_share = float(zero_open_count / open_count) if open_count > 0 else 0.0
+            segments = zeros_open.ne(zeros_open.shift()).cumsum()
+            max_zero_open_run = int(zeros_open.groupby(segments).sum().max() or 0)
+            if zero_tail_open_max is not None:
+                if open_count > 0 and max_zero_open_run > zero_tail_open_max:
+                    zero_tail_open_ok = False
                     is_valid = False
-                    reasons.append(f"zero_tail_run>{zero_tail_max}")
-            if zero_tail_share is not None:
-                share = zeros.mean()
-                if share > zero_tail_share:
-                    zero_tail_ok = False
+                    reasons.append(f"inconsistent_zero_open_run>{zero_tail_open_max}")
+            if zero_tail_open_share is not None:
+                if open_count > 0 and zero_open_share > zero_tail_open_share:
+                    zero_tail_open_ok = False
                     is_valid = False
-                    reasons.append(f"zero_tail_share>{zero_tail_share}")
+                    reasons.append(f"inconsistent_zero_open_share>{zero_tail_open_share}")
 
         records.append(
             {
                 "store_id": store_id,
                 "n_obs": n_obs,
                 "start_date": start_date,
-                "end_date": end_date,
+                "start_date_all": start_date_all,
+                "end_date_observed": end_date_observed,
+                "end_date_all": end_date_all,
                 "max_consecutive_daily_run": max_run,
                 "recent_window_ok": bool(recent_ok),
                 "recent_cov_ok": bool(cov_ok),
-                "zero_tail_ok": bool(zero_tail_ok),
+                "zero_tail_open_ok": bool(zero_tail_open_ok),
+                "zero_open_count": int(zero_open_count),
+                "open_count": int(open_count),
+                "zero_open_share": float(zero_open_share),
+                "max_zero_open_run": int(max_zero_open_run),
+                # n_total_days/missing_target_days refer to calendar span (meaningful after daily reindex in main)
+                "n_total_days": int((end_date_all - start_date_all).days + 1) if pd.notna(end_date_all) and pd.notna(start_date_all) else None,
+                "missing_target_days": int((end_date_all - start_date_all).days + 1 - n_obs) if pd.notna(end_date_all) and pd.notna(start_date_all) else None,
+                "future_na_cols": ",".join(future_na_cols) if future_na_cols else "",
                 "is_valid": bool(is_valid),
                 "reasons": ";".join(reasons) if reasons else "",
             }
@@ -291,8 +336,9 @@ def filter_valid_stores(
     min_mean_target=None,
     covariate_cols=None,
     check_recent_covariates=False,
-    zero_tail_max=None,
-    zero_tail_share=None,
+    zero_tail_open_max=None,
+    zero_tail_open_share=None,
+    check_future_covariates=None,
 ):
     """Filter dataframe to valid stores and return df, report, and id list."""
     report_df = build_store_validity_report(
@@ -306,8 +352,9 @@ def filter_valid_stores(
         min_mean_target=min_mean_target,
         covariate_cols=covariate_cols,
         check_recent_covariates=check_recent_covariates,
-        zero_tail_max=zero_tail_max,
-        zero_tail_share=zero_tail_share,
+        zero_tail_open_max=zero_tail_open_max,
+        zero_tail_open_share=zero_tail_open_share,
+        check_future_covariates=check_future_covariates,
     )
     valid_ids = report_df.loc[report_df["is_valid"], "store_id"].tolist()
     df_filtered = df[df[store_col].isin(valid_ids)].copy()
@@ -343,13 +390,30 @@ def clean_data(df, keep_closed_days=True):
     target_col = "Sales" if "Sales" in df.columns else None
     target_series = df[target_col] if target_col else None
 
-    non_target_cols = [c for c in df.columns if c != target_col]
-    df_non_target = df[non_target_cols].ffill().bfill().infer_objects(copy=False)
+    # fill only static store-level metadata; leave time-varying covariates untouched
+    static_cols = {
+        "StoreType",
+        "Assortment",
+        "CompetitionDistance",
+        "CompetitionOpenSinceMonth",
+        "CompetitionOpenSinceYear",
+        "Promo2",
+        "Promo2SinceWeek",
+        "Promo2SinceYear",
+        "PromoInterval",
+    }
+    fill_cols = [c for c in df.columns if c in static_cols]
+
+    if fill_cols:
+        if "Store" in df.columns:
+            df[fill_cols] = (
+                df.groupby("Store")[fill_cols].ffill().bfill().infer_objects(copy=False)
+            )
+        else:
+            df[fill_cols] = df[fill_cols].ffill().bfill().infer_objects(copy=False)
 
     if target_col:
-        df = pd.concat([df_non_target, target_series], axis=1)
-    else:
-        df = df_non_target
+        df[target_col] = target_series
 
     return df
 
@@ -358,9 +422,9 @@ def add_time_features(df):
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"])
 
-    # IMPORTANT: keep DayOfWeek because it is used as covariate in paper-style selection
-    # Rossmann has DayOfWeek already, but we standardize it
-    df["DayOfWeek"] = df["Date"].dt.dayofweek
+    # Keep original DayOfWeek if present (Rossmann usa 1-7); otherwise derive 1-7
+    if "DayOfWeek" not in df.columns:
+        df["DayOfWeek"] = df["Date"].dt.dayofweek + 1
 
     return df
 
@@ -368,15 +432,27 @@ def add_time_features(df):
 def fix_mixed_types(df):
     df = df.copy()
     target_cols = {"Sales", "target"}
+    # Global, deterministic mapping for StateHoliday to avoid per-store category codes
+    if "StateHoliday" in df.columns:
+        mapping = {"0": 0, "a": 1, "b": 2, "c": 3}
+        df["StateHoliday"] = (
+            df["StateHoliday"].astype(str).str.lower().map(mapping).fillna(0).astype(int)
+        )
 
     for col in df.columns:
         if df[col].dtype == "object":
+            # NOTE: Avoid cat.codes for model features; use explicit global mappings instead.
+            if col == "StateHoliday":
+                continue
             df[col] = df[col].astype("category").cat.codes
 
     for col in df.columns:
         if col in target_cols:
             continue
         if pd.api.types.is_numeric_dtype(df[col]):
+            if col == "Open":
+                # Do not invent closures: leave NaN to be caught by continuity checks
+                continue
             df[col] = df[col].fillna(0)
 
     return df
@@ -420,14 +496,14 @@ if __name__ == "__main__":
     print("[STEP] Adding time features...")
     df = add_time_features(df)
 
+    print("[STEP] Converting to Chronos format...")
+    df = to_chronos_df(df)
+
     print("[STEP] Selecting important features (paper-style)...")
     df = select_important_features(df)
 
     print("[STEP] Fixing mixed types...")
     df = fix_mixed_types(df)
-
-    print("[STEP] Converting to Chronos format...")
-    df = to_chronos_df(df)
 
     print("[STEP] Saving processed dataset...")
     save_processed(df, out_path)

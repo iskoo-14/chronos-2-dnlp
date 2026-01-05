@@ -48,6 +48,13 @@ def pred_df_to_quantiles(pred_df):
             raise ValueError("Cannot find median column in prediction df")
         return p10, med, p90
 
+    # Alternative naming: p10/median/p90 (or p50)
+    if ("p10" in pred_df.columns and ("median" in pred_df.columns or "p50" in pred_df.columns) and "p90" in pred_df.columns):
+        p10 = pred_df["p10"].values
+        p90 = pred_df["p90"].values
+        med = pred_df["median"].values if "median" in pred_df.columns else pred_df["p50"].values
+        return p10, med, p90
+
     # fallback (should not happen with Chronos2Pipeline.predict_df)
     raise ValueError(f"Unexpected prediction df columns: {list(pred_df.columns)}")
 
@@ -55,6 +62,13 @@ def pred_df_to_quantiles(pred_df):
 def save_quantiles_csv(pred_df, out_path, verbose=True):
     p10, med, p90 = pred_df_to_quantiles(pred_df)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    pd.DataFrame({"p10": p10, "median": med, "p90": p90}).to_csv(out_path, index=False)
+    cols = {"p10": p10, "median": med, "p90": p90}
+    if "timestamp" in pred_df.columns:
+        cols = {"timestamp": pd.to_datetime(pred_df["timestamp"]).values, **cols}
+    # propagate metadata if present
+    for meta_col in ["context_len", "horizon", "variant", "store_id"]:
+        if meta_col in pred_df.columns:
+            cols[meta_col] = pred_df[meta_col].values
+    pd.DataFrame(cols).to_csv(out_path, index=False)
     if verbose:
         print(f"[INFO] Saved forecast: {out_path}")
