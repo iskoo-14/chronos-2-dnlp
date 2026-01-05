@@ -127,7 +127,7 @@ if __name__ == "__main__":
     HORIZON = 30
 
     BEST_CONTEXT = 512
-    RUN_ALL_CONTEXTS = False
+    RUN_ALL_CONTEXTS = True
     CONTEXT_LENGTHS = [128, 256, 512] if RUN_ALL_CONTEXTS else [BEST_CONTEXT]
     MIN_RUN = max(CONTEXT_LENGTHS) + HORIZON
 
