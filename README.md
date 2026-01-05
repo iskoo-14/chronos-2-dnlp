@@ -84,8 +84,10 @@ Located in `src/models/robustness.py`. Tests include noise, strong noise, shuffl
   - `reports/wql_by_context.csv`
   - `reports/wql_summary.csv`
   - `outputs/comparison_report.txt`
+- best context: `reports/wql_by_context.csv` + `select_best_context.py` print the best context per mode (default BEST_CONTEXT=512 in `main.py`)
+
 `select_best_context.py`:
-- reads `reports/wql_by_context.csv` and prints the best context per mode (covariate/univariate)
+- prints best context per mode and a short robustness summary (if available)
 
 ## 7. Plots
 
