@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import numpy as np
 
 def load_raw_data(train_path: str, store_path: str, store_id: int | None = None) -> pd.DataFrame:
     train = pd.read_csv(train_path, low_memory=False)
@@ -157,4 +158,109 @@ def temporal_split(df: pd.DataFrame, test_size: int = 30):
     df_past = g.iloc[:-test_size].reset_index(drop=True)
     df_test = g.iloc[-test_size:].reset_index(drop=True)
     return df_past, df_test
+
+
+
+#New methods
+def aggregate_shop(df, shop_id):
+    """
+    Aggregate time-series data of a single shop into a fixed-length
+    feature vector suitable for shop-level clustering.
+
+    Each feature captures a different aspect of shop behaviour:
+    level, volatility, trend dynamics, seasonality, promotions
+    and operational patterns.
+    """
+    out = {}
+    out["shop_id"] = shop_id
+
+    target = df["target"]
+
+    # ============================================================
+    # BLOCK A — Target level and variability
+    # Capture the general sales level and stability of the shop
+    # ============================================================
+    out["mean_target"] = target.mean()                     # Average sales level
+    out["std_target"] = target.std()                       # Sales volatility
+    out["cv_target"] = out["std_target"] / (out["mean_target"] + 1e-6)  # Relative variability
+    out["iqr_target"] = (
+        target.quantile(0.95) - target.quantile(0.05)
+    )                                                       # Robust spread (outlier-resistant)
+
+    # ============================================================
+    # BLOCK B — Short-term dynamics and spikes
+    # Characterize day-to-day changes and abrupt movements
+    # ============================================================
+    chg = df["chg_1"].dropna()                              # First-order differences
+    out["mean_abs_chg"] = np.abs(chg).mean()                # Average magnitude of changes
+    out["std_chg"] = chg.std()                              # Variability of changes
+
+    spike_thr = chg.quantile(0.9)                           # Extreme-change threshold
+    out["spike_rate"] = (np.abs(chg) > spike_thr).mean()    # Frequency of large spikes
+
+    # ============================================================
+    # BLOCK C — Temporal dependence and trend smoothness
+    # Measure persistence and long-term memory in the series
+    # ============================================================
+    for lag in [1, 4, 12, 52]:
+        col = f"lag_{lag}"
+        if col in df:
+            out[f"corr_lag{lag}"] = (
+                df[["target", col]].corr().iloc[0, 1]
+            )                                               # Autocorrelation at given lag
+        else:
+            out[f"corr_lag{lag}"] = np.nan
+
+    out["ema_gap"] = (
+        np.abs(df["ema_4"] - df["ema_8"]).mean()
+    )                                                       # Short vs long trend divergence
+
+    # ============================================================
+    # BLOCK D — Seasonality strength
+    # Quantify weekly, monthly and yearly seasonal effects
+    # ============================================================
+    out["weekly_strength"] = np.var(
+        df["target"] * df["week_sin"]
+    )                                                       # Weekly seasonality intensity
+
+    out["monthly_strength"] = np.var(
+        df["target"] * df["month_sin"]
+    )                                                       # Monthly seasonality intensity
+
+    out["yearly_strength"] = abs(
+        out["corr_lag52"]
+    )                                                       # Annual pattern persistence
+
+    # ============================================================
+    # BLOCK E — Promotion and holiday effects
+    # Estimate sensitivity to external demand drivers
+    # ============================================================
+    if "Promo" in df:
+        out["promo_rate"] = df["Promo"].mean()              # Fraction of promo days
+        out["promo_lift"] = (
+            df.loc[df["Promo"] == 1, "target"].mean()
+            - df.loc[df["Promo"] == 0, "target"].mean()
+        )                                                   # Average promo impact
+    else:
+        out["promo_rate"] = np.nan
+        out["promo_lift"] = np.nan
+
+    if "SchoolHoliday" in df:
+        out["holiday_lift"] = (
+            df.loc[df["SchoolHoliday"] == 1, "target"].mean()
+            - df.loc[df["SchoolHoliday"] == 0, "target"].mean()
+        )                                                   # Holiday effect on sales
+    else:
+        out["holiday_lift"] = np.nan
+
+    # ============================================================
+    # BLOCK F — Store operation patterns
+    # Capture opening behaviour and sales when operational
+    # ============================================================
+    out["closed_rate"] = (df["Open"] == 0).mean()           # Fraction of closed days
+    out["mean_target_open"] = (
+        df.loc[df["Open"] == 1, "target"].mean()
+    )                                                       # Average sales when open
+
+    return out
 
