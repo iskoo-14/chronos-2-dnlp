@@ -508,3 +508,63 @@ def plot_cluster_profiles_zscore(
     plt.show()
 
     return profile, profile_z
+
+
+from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+def plot_delta_wql_by_cluster(
+    df,
+    cluster_col: str = "cluster",
+    delta_col: str = "delta_wql",
+    figsize=(6, 4),
+    title: str = "Impact of Additional Features on WQL by Cluster",
+    ylabel: str = "ΔWQL (new − baseline)",
+    save_png: bool = True,
+    png_path: str | Path = "delta_wql_by_cluster.png",
+    dpi: int = 300,
+):
+    """
+    Plots a boxplot of ΔWQL by cluster and optionally saves it as a PNG.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing cluster labels and delta WQL values.
+    cluster_col : str, default="cluster"
+        Name of the cluster column.
+    delta_col : str, default="delta_wql"
+        Name of the ΔWQL column (new − baseline).
+    figsize : tuple, default=(6, 4)
+        Figure size.
+    title : str
+        Plot title.
+    ylabel : str
+        Y-axis label.
+    save_png : bool, default=True
+        Whether to save the plot as a PNG.
+    png_path : str or Path, default="delta_wql_by_cluster.png"
+        Output path for the PNG file.
+    dpi : int, default=300
+        Resolution of the saved PNG.
+    """
+
+    plt.figure(figsize=figsize)
+    sns.boxplot(data=df, x=cluster_col, y=delta_col)
+
+    plt.axhline(0, color="black", linestyle="--", linewidth=1)
+    plt.title(title)
+    plt.xlabel("Cluster")
+    plt.ylabel(ylabel)
+    plt.tight_layout()
+
+    if save_png:
+        png_path = Path(png_path)
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(png_path, format="png", dpi=dpi, bbox_inches="tight")
+        print(f"[INFO] Saved plot: {png_path}")
+
+    plt.show()
+

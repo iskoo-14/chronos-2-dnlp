@@ -1,0 +1,22 @@
+Interpretation of Feature Impact on Probabilistic Forecasting Performance
+Cluster 0 — Small & Operationally Unstable Promotion-Driven Stores
+For Cluster 0, the introduction of additional features leads to a substantial and consistent improvement in probabilistic accuracy. The mean ΔWQL of −0.0255 and median of −0.0239 indicate that, on average, stores in this cluster benefit noticeably from the enhanced feature set.
+The relatively moderate standard deviation (0.0131) suggests that the improvement is broadly shared across stores, although some heterogeneity remains. The interquartile range (p25 = −0.0313, p75 = −0.0178) lies entirely below zero, confirming that the majority of stores experience a reduction in forecasting error. However, the presence of a small number of extreme negative outliers indicates that for certain shops, the added features enable particularly large performance gains.
+Overall, these results suggest that for small and operationally unstable stores—where demand is strongly influenced by short-term shocks and irregular patterns—the inclusion of seasonal and correlation-based information provides valuable structure that Chronos is otherwise unable to infer reliably from the target series alone.
+
+Cluster 2 — Stable Seasonal Stores
+In contrast to the other regimes, Cluster 2 shows a much smaller and less consistent response to the inclusion of additional features. The mean ΔWQL of −0.0118 and median of −0.0061 indicate only marginal improvement, with several stores experiencing negligible gains or even mild degradation in probabilistic accuracy.
+This interpretation is further supported by the large relative standard deviation (0.0199) and the upper quantiles: while the lower quartile (p25 = −0.0242) suggests that some stores do benefit, the 75th percentile is close to zero and the 90th percentile becomes positive, indicating that for a non-trivial fraction of stores the additional features provide no benefit or introduce noise.
+These findings imply that Chronos already captures the dominant structure of stable, strongly seasonal demand regimes using the target history alone. As a result, additional seasonal and correlation-based covariates offer limited incremental information and may even disrupt well-learned patterns for certain stores.
+
+Cluster 1 — Large Promotion-Driven Stores
+Cluster 1 exhibits the largest average improvement among all demand regimes, with a mean ΔWQL of −0.0277 and a median of −0.0253. This indicates that large, promotion-driven stores benefit the most from the inclusion of additional features.
+At the same time, this cluster displays the highest variability in performance gains, as reflected by a standard deviation of 0.0187. While the interquartile range (p25 = −0.0317, p75 = −0.0183) remains well below zero—demonstrating robust overall improvement—the wider spread and extreme negative outliers suggest that the magnitude of benefit varies considerably across individual stores.
+This behavior is consistent with the heterogeneous nature of large promotion-driven stores: while some exhibit strong, feature-aligned seasonal and temporal patterns that Chronos can exploit effectively, others remain dominated by irregular promotional shocks. Consequently, the added features act as a powerful enabler for a subset of stores, resulting in both the highest gains and the largest dispersion in ΔWQL.
+Cluster 2 — Stable Seasonal Stores
+In contrast to the other regimes, Cluster 2 shows a much smaller and less consistent response to the inclusion of additional features. The mean ΔWQL of −0.0118 and median of −0.0061 indicate only marginal improvement, with several stores experiencing negligible gains or even mild degradation in probabilistic accuracy.
+This interpretation is further supported by the large relative standard deviation (0.0199) and the upper quantiles: while the lower quartile (p25 = −0.0242) suggests that some stores do benefit, the 75th percentile is close to zero and the 90th percentile becomes positive, indicating that for a non-trivial fraction of stores the additional features provide no benefit or introduce noise.
+These findings imply that Chronos already captures the dominant structure of stable, strongly seasonal demand regimes using the target history alone. As a result, additional seasonal and correlation-based covariates offer limited incremental information and may even disrupt well-learned patterns for certain stores.
+
+
+
