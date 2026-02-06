@@ -38,9 +38,22 @@ The dataset includes the following groups of features:
 
 ---
 
-### Output Location
+### Clustering Methodology
 
-The generated dataset is stored in:
+To identify groups of stores with similar demand characteristics, the
+**K-Means clustering algorithm** is applied to the shop-level feature dataset.
+
+- The number of clusters \( k \) is **not fixed in advance**.
+- K-Means is evaluated over a predefined range of candidate values for \( k \).
+- For each configuration, the **Silhouette score** is computed using
+  standardized feature representations.
+- The final clustering solution is selected as the one that
+  **maximizes the Silhouette score**, ensuring an appropriate trade-off
+  between cluster compactness and separation.
+
+Detailed reports of the Silhouette analysis and the evaluated clustering
+configurations are stored in:
 
 ```text
-data/extension2/shop_features_for_clustering.csv
+reports/extension2/cluster_sil/
+reports/extension2/k_summary/

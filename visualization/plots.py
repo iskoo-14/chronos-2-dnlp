@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -432,3 +433,78 @@ def _load_robustness_outputs(suffix, ctx_len):
         "scaling": load(base_dir, f"scaling_output{suffix}.csv", warn=False),
         "long_horizon": load(base_dir, f"long_horizon_output{suffix}.csv", warn=False),
     }
+
+
+## CLUSTERIZATION ##
+def plot_cluster_profiles_zscore(
+    df_with_clusters,
+    key_features,
+    cluster_col: str = "cluster",
+    figsize=(12, 5),
+    fig_path: str | Path = "cluster_profiles.png",
+    title: str = "Normalized cluster-wise feature profiles",
+
+):
+    """
+    Plots grouped bar chart of cluster-wise feature means,
+    normalized via z-score per feature.
+
+    Parameters
+    ----------
+    df_with_clusters : pd.DataFrame
+        DataFrame containing feature columns and cluster labels.
+    key_features : list[str]
+        List of feature names to include in the plot.
+    cluster_col : str, default="cluster"
+        Name of the column with cluster labels.
+    figsize : tuple, default=(12, 5)
+        Figure size.
+    title : str
+        Plot title.
+    """
+
+    # 1) Compute cluster-wise profile
+    profile = (
+        df_with_clusters
+        .groupby(cluster_col)[key_features]
+        .mean()
+        .round(3)
+    )
+
+    # 2) Z-score normalization per feature
+    profile_z = (profile - profile.mean()) / profile.std()
+
+    features = profile_z.columns.tolist()
+    clusters = profile_z.index.tolist()
+
+    x = np.arange(len(features))
+    width = 0.8 / len(clusters)  # auto-adjust bar width
+
+    # 3) Plot
+    plt.figure(figsize=figsize)
+
+    for i, cluster in enumerate(clusters):
+        plt.bar(
+            x + i * width,
+            profile_z.loc[cluster],
+            width,
+            label=f"Cluster {cluster}"
+        )
+
+    plt.axhline(0, color="black", linewidth=1)
+    plt.xticks(x + width * (len(clusters) - 1) / 2, features, rotation=45, ha="right")
+    plt.ylabel("Z-score (deviation from global mean)")
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    
+    
+    fig_path = Path(fig_path)
+    fig_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_path, format="png", bbox_inches="tight")
+    print(f"[INFO] Cluster profile plot saved to: {fig_path}")
+    
+    
+    plt.show()
+
+    return profile, profile_z

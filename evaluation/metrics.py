@@ -8,7 +8,6 @@ from .io import ensure_dir, load_csv, list_context_dirs, detect_store_ids
 def mae(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.mean(np.abs(a - b)))
 
-
 def rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
