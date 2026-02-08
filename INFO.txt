@@ -1,0 +1,4 @@
+DATA MAPPING:
+
+SHOP EMBEDDINGS (with cluster id) - data/extension3/shop_embeddings_with_cluster
+CLUSTER EMBEDDINGS - data/extension3/cluster_embeddings_mean
