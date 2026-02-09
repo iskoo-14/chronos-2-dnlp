@@ -41,7 +41,7 @@ shop_cluster = {int(r.shop_id): int(r.cluster) for _, r in df_shop.iterrows()}
 df_cluster = pd.read_csv(CLUST_EMB_CSV)
 cluster_emb = {int(r.cluster): r[emb_cols].values.astype(np.float32) for _, r in df_cluster.iterrows()}
 
-# ---- LOAD DATASET (1 sample per shop) ----
+# ---- LOAD DATASET  ----
 examples = []
 for fp in glob.glob(os.path.join(FORECASTS_DIR, "forecast_store_*.csv")):
     sid = int(re.search(r"store_(\d+)\.csv", fp).group(1))
