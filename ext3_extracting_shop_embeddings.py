@@ -3,9 +3,9 @@ from run_ext1 import INCLUDE_CHG, INCLUDE_EMA, INCLUDE_ROLLING, read_processed_s
 import math
 import torch
 import pandas as pd
-
 import numpy as np
-
+from sklearn.model_selection import train_test_split
+import os
 
 def extract_past_embedding(
     pipeline,
@@ -13,7 +13,7 @@ def extract_past_embedding(
     future_df: pd.DataFrame,
     horizon: int = 30,
     target_index: int = 0,
-    pooling: str = "mean",   # "mean" ili "last"
+    pooling: str = "mean",  
     verbose: bool = True,
 ):
     """
@@ -179,9 +179,8 @@ for k, sid in enumerate(store_ids):
         print(f"[SKIP] Store {sid}: NaN in covariates")
         continue
 
-    # logove pusti samo za prvi shop (da ne spamuje)
+    # log only for the first shop
     verbose = (k == 0)
-
     shop_emb, past_tokens, info = extract_past_embedding(
         pipeline,
         context_cov,
@@ -207,63 +206,31 @@ for k, sid in enumerate(store_ids):
     rows.append(row)
 
 print(f"Collected embeddings for {len(rows)} shops.")
-
 emb_df = pd.DataFrame(rows)
-out_path = "data/extension3/shop_embeddings_chronos2.csv"
-emb_df.to_csv(out_path, index=False)
-print("Saved:", out_path)
-print("DF shape:", emb_df.shape)
 
-# for sid in store_ids:
+# Load embeddings from CSV file
+# csv_path = "data/extension3/shop_embeddings_chronos2.csv"
+# emb_df = pd.read_csv(csv_path)
 
-#     df = read_processed_store(sid, processed_dir=PROCESSED_DIR_EXT1)
-#     df = ensure_dayofweek(df)
-#     df_past, df_test = temporal_split(df, test_size=HORIZON)
-    
-#     if len(df_past) > CTX_LEN:
-#         df_past = df_past.iloc[-CTX_LEN:].reset_index(drop=True)
-        
-#     df_past = ensure_dayofweek(df_past)
-#     df_test = ensure_dayofweek(df_test)
+### SPLITTING EMBEDDINGS INTO TRAIN AND TEST
+train_df, test_df = train_test_split(
+    emb_df,
+    test_size=0.2,
+    random_state=42,
+    shuffle=True
+)
 
-#     needed_ctx = ["id", "timestamp", "target"] + PAST_ONLY_COVS + FUTURE_KNOWN_COVS
-#     needed_fut = ["id", "timestamp"] + FUTURE_KNOWN_COVS
+# Define output directory
+base_path = "data/extension3/shop_embeddings"
+os.makedirs(base_path, exist_ok=True)
 
-#     missing_ctx = [c for c in needed_ctx if c not in df_past.columns]
-#     missing_fut = [c for c in needed_fut if c not in df_test.columns]
-    
-#     if missing_ctx or missing_fut:
-#         print(f"[SKIP] Store {sid}: missing cov columns ctx={missing_ctx} fut={missing_fut}")
-#         continue
+# Define output file paths
+train_path = os.path.join(base_path, "train.csv")
+test_path = os.path.join(base_path, "test.csv")
 
-#     context_cov = df_past[needed_ctx].copy()
-#     future_cov = df_test[needed_fut].copy()
+# Save train and test datasets
+train_df.to_csv(train_path, index=False)
+test_df.to_csv(test_path, index=False)
 
-#     if "Open" in future_cov.columns and "Promo" in future_cov.columns:
-#         fut_open = pd.to_numeric(future_cov["Open"], errors="coerce").fillna(1)
-#         future_cov.loc[fut_open.eq(0), "Promo"] = 0
-#     if "Open" in context_cov.columns and "Promo" in context_cov.columns:
-#         ctx_open = pd.to_numeric(context_cov["Open"], errors="coerce").fillna(1)
-#         context_cov.loc[ctx_open.eq(0), "Promo"] = 0
-
-#     if context_cov.isna().any().any() or future_cov.isna().any().any():
-#         print(f"[SKIP] Store {sid}: NaN in covariates")
-#         continue
-    
-#     shop_emb, past_tokens, info = extract_past_embedding(
-#         pipeline,
-#         context_cov,
-#         future_cov,
-#         horizon=30,
-#         target_index=0,
-#         pooling="mean",
-#         verbose=True,
-#     )
-    
-#     print(shop_emb.shape)
-
-
-
-#     break
-
-
+print("Train saved to:", train_path, "shape:", train_df.shape)
+print("Test saved to:", test_path, "shape:", test_df.shape)
