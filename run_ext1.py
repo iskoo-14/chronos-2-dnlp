@@ -1,6 +1,9 @@
 import os
 import argparse
 import pandas as pd
+import re
+import shutil
+
 
 from config import (
     HORIZON,
@@ -138,8 +141,79 @@ def normalize_pred_columns(pred: pd.DataFrame) -> pd.DataFrame:
 
     return pred
 
+TEST_IDS_PATH = os.path.join("data", "extension3", "splits", "test_store_ids.txt")
+
+
+def read_ids_txt(path: str) -> list[int]:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Missing test ids file: {path}")
+    ids: list[int] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if s:
+                ids.append(int(s))
+    return sorted(set(ids))
+
+
+def materialize_test_only_outputs(experiment: str, test_ids: list[int]) -> str:
+    """
+    Kreira outputs/<experiment>__test_only/{forecasts,ground_truth} sa fajlovima samo za test_ids.
+    Ne menja evaluator funkcije, samo pravi test-only view na disku.
+    """
+    src_root = os.path.join("outputs", experiment)
+    src_forecasts = os.path.join(src_root, "forecasts")
+    src_gt = os.path.join(src_root, "ground_truth")
+
+    if not os.path.exists(src_forecasts):
+        raise FileNotFoundError(f"Missing forecasts_root: {src_forecasts}")
+    if not os.path.exists(src_gt):
+        raise FileNotFoundError(f"Missing gt_dir: {src_gt}")
+
+    test_experiment = f"{experiment}__test_only"
+    dst_root = ensure_dir(os.path.join("outputs", test_experiment))
+    dst_forecasts = ensure_dir(os.path.join(dst_root, "forecasts"))
+    dst_gt = ensure_dir(os.path.join(dst_root, "ground_truth"))
+
+    test_set = set(test_ids)
+
+    # copy GT (flat)
+    copied_gt = 0
+    for sid in test_ids:
+        src = os.path.join(src_gt, f"ground_truth_store_{sid}.csv")
+        if os.path.exists(src):
+            shutil.copyfile(src, os.path.join(dst_gt, f"ground_truth_store_{sid}.csv"))
+            copied_gt += 1
+
+    # copy forecasts (keep folder structure)
+    copied_fc = 0
+    for root, _, files in os.walk(src_forecasts):
+        rel = os.path.relpath(root, src_forecasts)
+        dst_dir = dst_forecasts if rel == "." else ensure_dir(os.path.join(dst_forecasts, rel))
+
+        for fn in files:
+            m = re.search(r"forecast_store_(\d+)\.csv$", fn)
+            if not m:
+                continue
+            sid = int(m.group(1))
+            if sid not in test_set:
+                continue
+
+            src_f = os.path.join(root, fn)
+            dst_f = os.path.join(dst_dir, fn)
+            shutil.copyfile(src_f, dst_f)
+            copied_fc += 1
+
+    return test_experiment
+
+
 # run evaluating - MAYBE I CHANGE THIS SO WE ALWAYS RUN THE run_evaluations.py script for all evaluations
-def run_evaluation(experiment: str, outlier_threshold: float = 0.5, no_outlier_filter: bool = False, show_per_store_lines: bool = False):
+def run_evaluation(
+    experiment: str,
+    outlier_threshold: float = 0.5,
+    no_outlier_filter: bool = False,
+    show_per_store_lines: bool = False,
+):
     forecasts_root = os.path.join("outputs", experiment, "forecasts")
     gt_dir = os.path.join("outputs", experiment, "ground_truth")
     reports_dir = eval_ensure_dir(os.path.join("reports", experiment))
@@ -157,19 +231,99 @@ def run_evaluation(experiment: str, outlier_threshold: float = 0.5, no_outlier_f
         include_store_lines=show_per_store_lines,
     )
 
-    per_store_path, by_ctx_path, summary_path, grouped_df, filter_note = summarize_wql(
-        records=records,
-        reports_dir=reports_dir,
-        apply_outlier_filter=(not no_outlier_filter),
-        outlier_threshold=outlier_threshold,
-    )
+    apply_filter = (not no_outlier_filter)
 
+    # -----------------------------
+    # Try summarize_wql; if it crashes (filter_note bug), do inline fallback
+    # -----------------------------
+    try:
+        per_store_path, by_ctx_path, summary_path, grouped_df, filter_note = summarize_wql(
+            records=records,
+            reports_dir=reports_dir,
+            apply_outlier_filter=apply_filter,
+            outlier_threshold=outlier_threshold,
+        )
+    except UnboundLocalError as e:
+        print(f"[WARN] summarize_wql crashed (known filter_note bug). Using inline fallback. Error: {e}")
+
+        if not records:
+            print("[WARN] No records returned from compute_wql_per_store. Cannot summarize.")
+            out_txt = write_comparison_report(
+                reports_dir=reports_dir,
+                text_lines=text_report + ["[WARN] Empty records: no forecasts/GT matched for evaluation."],
+            )
+            print(f"[INFO] Saved {out_txt}")
+            return
+
+        df = pd.DataFrame(records)
+
+        # robust col pick
+        def _pick_col(cands):
+            for c in cands:
+                if c in df.columns:
+                    return c
+            return None
+
+        store_col = _pick_col(["store_id", "shop_id", "sid", "id"])
+        wql_col   = _pick_col(["wql", "pinball", "mean_wql"])
+        mae_col   = _pick_col(["mae", "mean_mae"])
+        rmse_col  = _pick_col(["rmse", "mean_rmse"])
+        ctx_col   = _pick_col(["context_length", "ctx", "context"])
+        mode_col  = _pick_col(["mode", "setting"])
+        p10u_col  = _pick_col(["p10_under", "mean_p10_under"])
+        p90o_col  = _pick_col(["p90_over", "mean_p90_over"])
+
+        missing_cols = [("store", store_col), ("wql", wql_col), ("ctx", ctx_col), ("mode", mode_col)]
+        missing_cols = [name for name, col in missing_cols if col is None]
+        if missing_cols:
+            raise RuntimeError(
+                f"Fallback summarize failed: missing expected cols {missing_cols}. "
+                f"Available columns: {df.columns.tolist()}"
+            )
+
+        per_store_path = os.path.join(reports_dir, "wql_per_store.csv")
+        by_ctx_path = os.path.join(reports_dir, "wql_by_context.csv")
+        summary_path = os.path.join(reports_dir, "wql_summary.csv")
+
+        df.to_csv(per_store_path, index=False)
+
+        if apply_filter:
+            thr = float(outlier_threshold)
+            df_f = df[df[wql_col] <= thr].copy()
+            filter_note = f"(filtered <= {thr})"
+        else:
+            df_f = df.copy()
+            filter_note = "(no filter)"
+
+        grouped_df = (
+            df_f.groupby([ctx_col, mode_col], dropna=False)
+               .agg(
+                    mean_wql=(wql_col, "mean"),
+                    std_wql=(wql_col, "std"),
+                    mean_mae=(mae_col, "mean") if mae_col else (wql_col, "mean"),
+                    mean_rmse=(rmse_col, "mean") if rmse_col else (wql_col, "mean"),
+                    mean_p10_under=(p10u_col, "mean") if p10u_col else (wql_col, "mean"),
+                    mean_p90_over=(p90o_col, "mean") if p90o_col else (wql_col, "mean"),
+                    n_stores=(store_col, "nunique"),
+               )
+               .reset_index()
+               .rename(columns={ctx_col: "context_length", mode_col: "mode"})
+               .sort_values(["context_length", "mode"])
+        )
+
+        grouped_df.to_csv(by_ctx_path, index=False)
+        grouped_df.to_csv(summary_path, index=False)
+
+    # -----------------------------
+    # Continue exactly like before
+    # -----------------------------
     if grouped_df is not None and not grouped_df.empty:
         text_report.append(f"=== Context summary {filter_note} ===")
         for _, row in grouped_df.sort_values(["context_length", "mode"]).iterrows():
+            std = 0.0 if pd.isna(row["std_wql"]) else float(row["std_wql"])
             text_report.append(
                 f"CTX {row['context_length']} {row['mode']}: "
-                f"mean_wql={row['mean_wql']:.4f} std_wql={row['std_wql']:.4f} "
+                f"mean_wql={row['mean_wql']:.4f} std_wql={std:.4f} "
                 f"mean_mae={row['mean_mae']:.2f} mean_rmse={row['mean_rmse']:.2f} "
                 f"p10_under={row['mean_p10_under']:.2f} p90_over={row['mean_p90_over']:.2f} "
                 f"n_stores={int(row['n_stores'])}"
@@ -316,6 +470,16 @@ if __name__ == "__main__":
 
     run_evaluation(
         experiment=EXPERIMENT,
+        outlier_threshold=args.outlier_threshold,
+        no_outlier_filter=args.no_outlier_filter,
+        show_per_store_lines=args.show_per_store_lines,
+    )
+    
+    test_ids = read_ids_txt(TEST_IDS_PATH)
+    exp_test = materialize_test_only_outputs(EXPERIMENT, test_ids)
+
+    run_evaluation(
+        experiment=exp_test,
         outlier_threshold=args.outlier_threshold,
         no_outlier_filter=args.no_outlier_filter,
         show_per_store_lines=args.show_per_store_lines,

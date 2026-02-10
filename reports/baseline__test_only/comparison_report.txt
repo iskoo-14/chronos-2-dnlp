@@ -1,0 +1,10 @@
+=== FORECAST COMPARISON REPORT (MULTICTX) ===
+
+=== Context summary (filtered <= 0.5) ===
+CTX 128 covariate: mean_wql=0.0753 std_wql=0.0253 mean_mae=723.67 mean_rmse=916.07 p10_under=0.15 p90_over=0.08 n_stores=187
+CTX 128 univariate: mean_wql=0.1051 std_wql=0.0200 mean_mae=869.35 mean_rmse=1122.11 p10_under=0.00 p90_over=0.03 n_stores=187
+CTX 256 covariate: mean_wql=0.0715 std_wql=0.0206 mean_mae=683.81 mean_rmse=878.84 p10_under=0.12 p90_over=0.06 n_stores=187
+CTX 256 univariate: mean_wql=0.1119 std_wql=0.0230 mean_mae=951.30 mean_rmse=1243.14 p10_under=0.00 p90_over=0.04 n_stores=187
+CTX 512 covariate: mean_wql=0.0662 std_wql=0.0185 mean_mae=638.86 mean_rmse=809.35 p10_under=0.11 p90_over=0.18 n_stores=187
+CTX 512 univariate: mean_wql=0.0786 std_wql=0.0310 mean_mae=762.27 mean_rmse=975.74 p10_under=0.08 p90_over=0.10 n_stores=187
+Best context (covariate): 512 mean_wql=0.0662 std=0.0185 n_stores=187

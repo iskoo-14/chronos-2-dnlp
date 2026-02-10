@@ -1,0 +1,5 @@
+=== FORECAST COMPARISON REPORT (MULTICTX) ===
+
+=== Context summary (filtered <= 0.5) ===
+CTX 512 covariate: mean_wql=0.0402 std_wql=0.0074 mean_mae=395.94 mean_rmse=502.35 p10_under=0.06 p90_over=0.15 n_stores=187
+Best context (covariate): 512 mean_wql=0.0402 std=0.0074 n_stores=187
