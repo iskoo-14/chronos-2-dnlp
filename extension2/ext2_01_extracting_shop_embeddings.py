@@ -7,8 +7,10 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from run_ext1 import INCLUDE_CHG, INCLUDE_EMA, INCLUDE_ROLLING, read_processed_store, extension1_covariate_sets, ensure_dayofweek, read_valid_store_ids, temporal_split, PROCESSED_DIR_EXT1, CTX_LEN, HORIZON
 from models.chronos import load_model
+from extension1.ext1_01_data_prep import read_valid_store_ids
+from extension1.ext1_run import read_processed_store, extension1_covariate_sets, ensure_dayofweek, temporal_split, PROCESSED_DIR_EXT1, CTX_LEN, HORIZON
+
 
 def extract_past_embedding(
     pipeline,
@@ -139,6 +141,12 @@ print("===================================================")
 
 store_ids = read_valid_store_ids()
 pipeline = load_model("amazon/chronos-2")
+
+
+INCLUDE_EMA = True
+INCLUDE_CHG = True
+INCLUDE_ROLLING = False
+
 
 PAST_ONLY_COVS, FUTURE_KNOWN_COVS = extension1_covariate_sets(
     include_ema=INCLUDE_EMA,
