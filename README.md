@@ -56,8 +56,8 @@ chronos-2-dnlp/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/emirmasood/HeatNet.git
-cd HeatNet
+git clone https://github.com/iskoo-14/chronos-2-dnlp.git
+cd chronos-2-dnlp
 ```
 
 ### Step 2: Install Dependencies
@@ -66,20 +66,22 @@ cd HeatNet
 pip install -r requirements.txt
 ```
 
-### Step 3: Download Data and Models
+### Step 3: 
 
-Due to GitHub's file size restrictions, download large files separately:
+#### ▶ Run Baseline
+```bash
+python baseline/run_baseline.py
+```
 
-* **Dataset:** [Google Drive Data Folder](https://drive.google.com/drive/folders/1bMuIT9NpPXCQPV6SGFvr6aIEn42B3BZ-?usp=sharing)
-* **ResNet Checkpoints:** [ResNet Checkpoints](https://drive.google.com/drive/folders/14pTckwpHFnaL27vCwQ3DRbv9XOCgZZOM?usp=drive_link)
-* **YOLOv10m pretrained weights:** [YOLOv10m Checkpoint](https://drive.google.com/file/d/1mRdriU3u85oxcL0CPeIhJBxX795iENse/view?usp=drive_link)
+#### ▶ Run Extension 1
+```bash
+python extension1/run_extension1.py
+```
 
-Place downloaded files into their respective folders as indicated in the folder structure above.
-
-### Step 4: 
-- Run baseline
-- Run extension1
-- Run extension2
+#### ▶ Run Extension 2
+```bash
+python extension2/run_extension2.py
+```
 
 
 ## 👥 Authors
@@ -96,8 +98,3 @@ Ismail Aljosevic (ismail.aljosevic@studenti.polito.it)
 Nicoletta Toma (nicoletta.toma@studenti.polito.it)
 
 ```
-
-
-
-
-
