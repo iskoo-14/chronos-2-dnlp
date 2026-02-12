@@ -1,0 +1,27 @@
+# Core ML
+torch
+transformers
+accelerate
+chronos-forecasting
+
+# Data
+pandas
+numpy
+scikit-learn
+umap-learn
+hdbscan
+
+# Visualization
+matplotlib
+seaborn
+
+# Utils
+python-dateutil
+tqdm
+requests
+
+# HuggingFace (NO extras)
+huggingface-hub[hf_text]
+
+# Testing
+pytest
