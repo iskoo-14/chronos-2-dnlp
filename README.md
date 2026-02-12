@@ -82,10 +82,6 @@ Place downloaded files into their respective folders as indicated in the folder 
 - Run extension2
 
 
-```
-
----
-
 ## 👥 Authors
 This project was created by:
 
@@ -99,7 +95,9 @@ Ismail Aljosevic (ismail.aljosevic@studenti.polito.it)
 
 Nicoletta Toma (nicoletta.toma@studenti.polito.it)
 
----
+```
 
----
+
+
+
 
