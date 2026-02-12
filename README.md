@@ -1,5 +1,8 @@
-<img src="https://i.ytimg.com/vi/x5sOms9SCHU/maxresdefault.jpg" width="400">
 
+
+<p align="center">
+  <img src="https://i.ytimg.com/vi/x5sOms9SCHU/maxresdefault.jpg" width="500"/>
+</p>
 
 
 # Zero-Shot Time Series Forecasting on Rossmann Sales Data using Chronos-2 Transformers
