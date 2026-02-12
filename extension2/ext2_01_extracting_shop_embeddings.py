@@ -9,7 +9,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.chronos import load_model
 from extension1.ext1_01_data_prep import read_valid_store_ids
-from extension1.ext1_run import read_processed_store, extension1_covariate_sets, ensure_dayofweek, temporal_split, PROCESSED_DIR_EXT1, CTX_LEN, HORIZON
+from extension1.run_extension1 import read_processed_store, extension1_covariate_sets, ensure_dayofweek, temporal_split, PROCESSED_DIR_EXT1, CTX_LEN, HORIZON
 
 
 def extract_past_embedding(
