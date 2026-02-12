@@ -3,6 +3,9 @@ import argparse
 import pandas as pd
 import time, traceback
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from config import PROCESSED_DIR, HORIZON
 from data.make_dataset import temporal_split
 from models.chronos import load_model

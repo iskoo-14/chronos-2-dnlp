@@ -1,6 +1,9 @@
 import os
 import pandas as pd
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from config import PROCESSED_DIR, HORIZON, CONTEXT_LENGTHS, SAVE_FUTURE_DEBUG, PAST_ONLY_COVS, FUTURE_KNOWN_COVS, SKIP_EXISTING_FORECASTS, SKIP_EXISTING_GT_DEBUG
 from data.make_dataset import temporal_split
 from models.chronos import load_model

@@ -2,6 +2,10 @@ import os
 import pandas as pd
 pd.set_option("future.no_silent_downcasting", True)
 
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from config import (
     TRAIN_PATH, STORE_PATH, PROCESSED_DIR,
     KEEP_CLOSED_DAYS, ENFORCE_DAILY_FREQUENCY, SKIP_EXISTING_PROCESSED
