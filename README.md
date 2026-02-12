@@ -37,7 +37,7 @@ chronos-2-dnlp/
 ├── extension1/          # First project extension
 ├── extension2/          # Second project extension
 ├── models/              # Model architectures and saved weights
-├── notebooks/           # Jupyter notebooks for experiments
+├── notebooks/           # Jupyter notebooks summarizing key experiments and model evaluations
 ├── outputs/             # Predictions and generated outputs
 ├── reports/             # Reports and documentation
 ├── visualization/       # Data and result visualizations
