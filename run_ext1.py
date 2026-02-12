@@ -4,7 +4,6 @@ import pandas as pd
 import re
 import shutil
 
-
 from config import (
     HORIZON,
     SAVE_FUTURE_DEBUG,

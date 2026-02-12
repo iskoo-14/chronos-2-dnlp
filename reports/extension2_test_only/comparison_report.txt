@@ -1,0 +1,4 @@
+=== FORECAST COMPARISON REPORT (MULTICTX) ===
+
+=== Summary (filtered <= 0.5) ===
+CTX 512 covariate: mean_wql=0.0293 std_wql=0.0074 mean_mae=279.85 mean_rmse=360.53 p10_under=0.12 p90_over=0.12 n_stores=187
