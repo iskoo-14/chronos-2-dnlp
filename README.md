@@ -9,7 +9,7 @@
 
 ## 📌 Overview
 
-This repository presents the **zero-shot forecasting performance** of the Chronos-2 Transformer model on the Rossmann Store Sales dataset. The project investigates how well a large pre-trained time-series foundation model generalizes to retail sales forecasting without task-specific fine-tuning.
+The project investigates how well a large pre-trained time-series foundation model generalizes to retail sales forecasting without task-specific fine-tuning.
 
 Beyond baseline zero-shot inference, the study explores systematic improvements through:
 
@@ -27,6 +27,24 @@ The goal is to analyze both the strengths and limitations of foundation models i
 
 ---
 
+## 📂 Project Structure
+chronos-2-dnlp/
+│
+├── baseline/            # Baseline model implementation
+├── data/                # Dataset and preprocessing scripts
+├── evaluation/          # Evaluation metrics and testing scripts
+├── extension1/          # First project extension
+├── extension2/          # Second project extension
+├── models/              # Model architectures and saved weights
+├── notebooks/           # Jupyter notebooks for experiments
+├── outputs/             # Predictions and generated outputs
+├── reports/             # Reports and documentation
+├── visualization/       # Data and result visualizations
+│
+├── config.py            # Project configuration file
+├── requirements.txt     # Python dependencies
+└── README.md            # Project documentation
+
 ## 🐍 Environment Requirements
 
 * **Python version:** 3.10.x (required)
@@ -36,8 +54,5 @@ The goal is to analyze both the strengths and limitations of foundation models i
 See `requirements.txt` for the full list of dependencies.
 ---
 
-## 📊 Dataset
-
-This project uses the **Rossmann Store Sales dataset**, which contains historical daily sales data for Rossmann drug stores.
 ---
 
