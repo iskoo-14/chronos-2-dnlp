@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import os
 
+
 def extract_past_embedding(
     pipeline,
     context_df: pd.DataFrame,
@@ -17,14 +18,15 @@ def extract_past_embedding(
     verbose: bool = True,
 ):
     """
-    Extractuje embedding shopa iz Chronos-2 encodera (past-only, target index 0),
-    uz detaljan trace shape-ova kroz ključne slojeve.
+    Extracts the shop embedding from the Chronos-2 encoder (past-only, target index 0),
+    with a detailed trace of tensor shapes through key layers.
 
     Returns:
-      shop_emb: torch.Tensor        [D]
-      past_tokens: torch.Tensor     [Nc, D]
-      info: dict (Nc, Nf, P, shapes, trace)
+    shop_emb: torch.Tensor        [D]
+    past_tokens: torch.Tensor     [Nc, D]
+    info: dict (Nc, Nf, P, shapes, trace)
     """
+    
     model = pipeline.inner_model
     model.eval()
 
