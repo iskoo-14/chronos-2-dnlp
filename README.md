@@ -39,7 +39,7 @@ chronos-2-dnlp/
 ├── models/              # Model architectures and saved weights
 ├── notebooks/           # Jupyter notebooks summarizing key experiments and model evaluations
 ├── outputs/             # Predictions and generated outputs
-├── reports/             # Reports and documentation
+├── reports/             # Summarized results for different settings used for evaluations
 ├── visualization/       # Data and result visualizations
 │
 ├── config.py            # Project configuration file
@@ -96,5 +96,3 @@ Era Alcani (era.alcani@studenti.polito.it)
 Ismail Aljosevic (ismail.aljosevic@studenti.polito.it)
 
 Nicoletta Toma (nicoletta.toma@studenti.polito.it)
-
-```

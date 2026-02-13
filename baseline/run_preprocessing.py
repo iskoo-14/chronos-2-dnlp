@@ -1,8 +1,6 @@
 import os
 import pandas as pd
 pd.set_option("future.no_silent_downcasting", True)
-
-
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -21,9 +19,18 @@ from data.make_dataset import (
     fix_mixed_types,
 )
 
-from features.baseline_features import select_baseline_features
 from data.store_selection import filter_valid_stores, reasons_summary
 
+# baseline set (like in the paper)
+PAST_ONLY_COVS = ["Customers"]
+KNOWN_FUTURE_COVS = ["Open", "Promo", "StateHoliday", "SchoolHoliday", "DayOfWeek"]
+BASELINE_KEEP_COLS = ["id", "timestamp", "target"] + PAST_ONLY_COVS + KNOWN_FUTURE_COVS
+
+def select_baseline_features(df_chronos: pd.DataFrame) -> pd.DataFrame:
+    missing = [c for c in BASELINE_KEEP_COLS if c not in df_chronos.columns]
+    if missing:
+        raise ValueError(f"Missing baseline columns: {missing}")
+    return df_chronos[BASELINE_KEEP_COLS].copy()
 
 def _ensure_dayofweek(df: pd.DataFrame) -> pd.DataFrame:
     if "timestamp" not in df.columns:
