@@ -41,7 +41,6 @@ chronos-2-dnlp/
 ├── outputs/             # Predictions and generated outputs
 ├── reports/             # Summarized results for different settings used for evaluations
 ├── visualization/       # Data and result visualizations
-│
 ├── config.py            # Project configuration file
 ├── requirements.txt     # Python dependencies
 └── README.md            # Project documentation
