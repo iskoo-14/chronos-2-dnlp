@@ -19,5 +19,4 @@ extension2/
 ├── run_extension2.py # Main script to execute Extension 2 pipeline
 ├── EXTENSION2.md  # Detailed explanation of the methodology
 
-└── pycache/ # Auto-generated Python cache files
 ```

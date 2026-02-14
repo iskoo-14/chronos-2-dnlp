@@ -12,6 +12,5 @@ baseline/
 ├── run_robustness.py # Robustness and stability scripts (Additional - not evaluated in our work)
 │
 ├── BASELINE.md # Detailed baseline methodology
-└── pycache/ # Auto-generated Python cache files
 
 ```

@@ -19,5 +19,4 @@ extension1/
 ├── run_extension1.py             # Main script to run the full Extension 1 pipeline
 │
 ├── EXTENSION1.md                 # Detailed explanation of the methodology
-└── __pycache__/  
 ```
