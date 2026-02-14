@@ -25,10 +25,6 @@ The goal is to analyze both the strengths and limitations of foundation models i
 2. **Store Regime Discovery via Clustering** – We identify latent subgroups of stores with similar operational dynamics using unsupervised clustering analysis.
 3. **Identity-Aware Model Probing** – We propose a novel probing strategy that enables Chronos-2 to leverage information from stores with similar working regimes without fine-tuning model parameters. This process is illustrated in the figure below.
 
-<p align="center">
-  <img src="pipeline_overview.png" width="1000">
-</p>
-
 ---
 ## 📂 Project Structure
 
